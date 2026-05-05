@@ -43,7 +43,10 @@ struct headers_t {
 struct l4s_meta_t {
     bit<1>  is_l4s;
     bit<3>  queue_id;
+    bit<1>  classic_protection_triggered;
     bit<32> current_threshold;
+    bit<32> classic_qdepth_snapshot;
+    bit<32> classic_protection_threshold;
     bit<32> qdepth_sample;
     bit<32> enq_qdepth_sample;
     bit<32> delay_sample;

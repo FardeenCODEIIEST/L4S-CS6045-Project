@@ -5,6 +5,7 @@ const bit<32> REG_INDEX = 0;
 
 register<bit<32>>(1) reg_l4s_threshold;
 register<bit<32>>(1) reg_classic_threshold;
+register<bit<32>>(1) reg_classic_protection_threshold;
 
 register<bit<32>>(1) reg_l4s_qdepth;
 register<bit<32>>(1) reg_classic_qdepth;

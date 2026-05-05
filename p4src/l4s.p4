@@ -29,6 +29,9 @@ control VerifyChecksumImpl(inout headers_t hdr, inout l4s_meta_t meta) {
 control IngressImpl(inout headers_t hdr,
                     inout l4s_meta_t meta,
                     inout standard_metadata_t standard_metadata) {
+    bit<32> classic_qdepth_snapshot;
+    bit<32> classic_protection_threshold;
+
     action drop() {
         mark_to_drop(standard_metadata);
     }
@@ -55,7 +58,10 @@ control IngressImpl(inout headers_t hdr,
     apply {
         meta.is_l4s = 0;
         meta.queue_id = CLASSIC_QUEUE_ID;
+        meta.classic_protection_triggered = 0;
         meta.current_threshold = 0;
+        meta.classic_qdepth_snapshot = 0;
+        meta.classic_protection_threshold = 0;
         meta.qdepth_sample = 0;
         meta.enq_qdepth_sample = 0;
         meta.delay_sample = 0;
@@ -66,6 +72,27 @@ control IngressImpl(inout headers_t hdr,
             if ((hdr.ipv4.ecn == ECN_ECT1) || (hdr.ipv4.ecn == ECN_CE)) {
                 meta.is_l4s = 1;
                 meta.queue_id = L4S_QUEUE_ID;
+            }
+
+            classic_qdepth_snapshot = 0;
+            classic_protection_threshold = 0;
+            reg_classic_qdepth.read(classic_qdepth_snapshot, REG_INDEX);
+            reg_classic_protection_threshold.read(classic_protection_threshold, REG_INDEX);
+
+            meta.classic_qdepth_snapshot = classic_qdepth_snapshot;
+            meta.classic_protection_threshold = classic_protection_threshold;
+
+            /*
+             * Anti-starvation guard:
+             * when the Classic queue is already backlogged, temporarily stop
+             * feeding new L4S packets into the higher-priority queue so it can
+             * drain and the scheduler can serve Classic traffic.
+             */
+            if ((meta.queue_id == L4S_QUEUE_ID) &&
+                (classic_protection_threshold > 0) &&
+                (classic_qdepth_snapshot >= classic_protection_threshold)) {
+                meta.queue_id = CLASSIC_QUEUE_ID;
+                meta.classic_protection_triggered = 1;
             }
 
             standard_metadata.priority = meta.queue_id;
@@ -93,7 +120,7 @@ control EgressImpl(inout headers_t hdr,
             previous_enq_qdepth = 0;
             growth = 0;
 
-            if (meta.is_l4s == 1) {
+            if (meta.queue_id == L4S_QUEUE_ID) {
                 reg_l4s_threshold.read(threshold, REG_INDEX);
                 reg_l4s_prev_enq_qdepth.read(previous_enq_qdepth, REG_INDEX);
             } else {
@@ -113,12 +140,14 @@ control EgressImpl(inout headers_t hdr,
             meta.delay_sample = current_delay;
             meta.growth_sample = growth;
 
-            if ((threshold > 0) && (current_qdepth >= threshold)) {
+            if ((threshold > 0) &&
+                (current_qdepth >= threshold) &&
+                (hdr.ipv4.ecn != ECN_NOT_ECT)) {
                 meta.threshold_exceeded = 1;
                 hdr.ipv4.ecn = ECN_CE;
             }
 
-            if (meta.is_l4s == 1) {
+            if (meta.queue_id == L4S_QUEUE_ID) {
                 reg_l4s_qdepth.write(REG_INDEX, current_qdepth);
                 reg_l4s_delay.write(REG_INDEX, current_delay);
                 reg_l4s_growth.write(REG_INDEX, growth);
