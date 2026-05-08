@@ -183,19 +183,19 @@ queue_size_pkts: 100
 
 #### `traffic/send_l4s.py`
 
-Sends UDP packets with the ECN field set to **ECT(1)** (`0b01`) using Scapy. The script accepts target IP, rate (Mbps), and duration as command-line arguments.
+Runs `iperf3` client with DCTCP (`sysctl net.ipv4.tcp_congestion_control=dctcp`). Applies an `iptables` mangle rule (`--set-tos 0x01/0x03`) on startup to rewrite ECT(0) → ECT(1) on all outgoing TCP packets so BMv2 classifies them into the L4S queue. Restores sysctl and removes the rule on exit.
 
 #### `traffic/send_classic.py`
 
-Sends UDP packets with ECN set to **Not-ECT** (`0b00`) or **ECT(0)** (`0b10`).
+Runs `iperf3` client with TCP Cubic. The `--ecn` flag optionally enables ECN negotiation so the Classic sender receives CE marks and responds with TCP's standard 50% window halve.
 
 #### `traffic/recv.py`
 
-Listens for incoming packets on the receiver host and logs per-packet arrival timestamps, sequence numbers, and ECN markings to a CSV file for post-processing.
+Runs `iperf3` servers on the L4S and Classic ports for throughput measurement, alongside a parallel `tcpdump` capture to `capture.pcap` for per-packet ECN bit extraction. `eval/parse_pcap.py` reads the pcap for ECN and latency analysis.
 
 #### `traffic/load_profile.py`
 
-Generates time-varying offered load patterns (e.g., ramp-up, step changes, mixed bursts) to stress-test threshold adaptation.
+Orchestrates time-varying load experiments (steady, ramp, step, burst, mixed) by spawning `send_l4s.py` and `send_classic.py` as subprocesses with stage-specific bandwidth targets.
 
 ---
 
