@@ -10,6 +10,8 @@ const bit<2> ECN_ECT1    = 0b01;
 const bit<2> ECN_ECT0    = 0b10;
 const bit<2> ECN_CE      = 0b11;
 
+// BMv2 QueueingLogicPriRL treats 0 as the lowest priority; larger values
+// are served first, subject to any runtime queue-rate cap.
 const bit<3> CLASSIC_QUEUE_ID = 0;
 const bit<3> L4S_QUEUE_ID     = 1;
 
