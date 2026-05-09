@@ -17,7 +17,7 @@ The purpose of the `p4src` component is to:
 - forward non-IPv4 Ethernet control traffic such as ARP through an L2 table,
 - classify traffic as **L4S** or **Classic** using the IPv4 ECN field,
 - place the packet into one of two queues,
-- protect Classic traffic from starvation when its queue backlog becomes too high,
+- protect Classic traffic from starvation when ingress observes Classic demand,
 - monitor queue state in egress, and
 - mark packets with `CE` when the queue depth crosses a configured threshold.
 
@@ -64,7 +64,7 @@ The current packet processing flow is:
 2. If the EtherType is IPv4, parse the IPv4 header.
 3. For IPv4 packets, classify the packet using the IPv4 ECN field.
 4. Assign the IPv4 packet to either the Classic queue or the L4S queue.
-5. If the Classic queue is already backlogged, temporarily demote new L4S packets to the Classic queue.
+5. If recent Classic arrivals have built protection budget, temporarily demote new L4S packets to the Classic queue.
 6. Forward IPv4 packets using the IPv4 LPM table.
 7. Forward non-IPv4 Ethernet traffic, including ARP, using the L2 forwarding table.
 8. In egress, read queue metadata and the queue-specific threshold for IPv4 packets.
@@ -117,7 +117,7 @@ This is the main mechanism that creates the two-queue behavior in the current im
 
 There is now one exception for starvation protection:
 
-- if a packet is classified as L4S but the Classic queue depth is already above a configured protection threshold, that packet is temporarily placed into the Classic queue instead of the L4S queue.
+- if a packet is classified as L4S but Classic arrivals have built protection budget, that packet is temporarily placed into the Classic queue instead of the L4S queue.
 
 ## Ingress Logic Explained
 
@@ -131,7 +131,7 @@ At the beginning of `apply`, the program resets all custom metadata fields:
 - `queue_id`
 - `classic_protection_triggered`
 - `current_threshold`
-- `classic_qdepth_snapshot`
+- `classic_protection_budget`
 - `classic_protection_threshold`
 - `qdepth_sample`
 - `enq_qdepth_sample`
@@ -154,17 +154,19 @@ The result is stored in `meta.is_l4s`.
 
 Once the class is known:
 
-- ingress reads the latest Classic queue depth from `reg_classic_qdepth`,
-- ingress reads the starvation-protection threshold from `reg_classic_protection_threshold`,
-- if the packet is L4S and the Classic queue depth is at or above that threshold, ingress demotes the packet to the Classic queue,
+- ingress reads the starvation-protection budget cap from `reg_classic_protection_threshold`,
+- ingress reads the current protection budget from `reg_classic_protection_budget`,
+- native Classic packets add one protection credit, capped by `reg_classic_protection_threshold`,
+- L4S packets consume one protection credit by being demoted to the Classic queue,
 - ingress sets `standard_metadata.priority` to the chosen queue ID,
 - then applies the `ipv4_lpm` table for forwarding.
 
 This is the anti-starvation logic in the current code. The idea is simple:
 
-- if L4S packets keep entering the higher-priority queue forever, Classic traffic can wait indefinitely,
-- once the Classic queue shows sustained backlog, the switch stops feeding new packets into the higher-priority queue,
-- the L4S queue drains, and the scheduler gets an opportunity to serve Classic traffic.
+- if L4S packets keep entering the higher-priority queue forever, Classic traffic can wait indefinitely under strict priority,
+- ingress cannot directly read the live Classic queue occupancy in BMv2,
+- native Classic arrivals therefore create protection credits before starvation becomes invisible at dequeue time,
+- later L4S packets spend those credits by entering the Classic queue, which reduces high-priority refill pressure and gives the lower-priority queue a chance to drain.
 
 The forwarding table supports:
 
@@ -283,8 +285,8 @@ The `l4s_meta_t` structure carries per-packet state between ingress and egress.
 - `queue_id`: selected queue ID
 - `classic_protection_triggered`: whether starvation protection demoted the packet
 - `current_threshold`: threshold value read in egress
-- `classic_qdepth_snapshot`: Classic queue depth seen by ingress
-- `classic_protection_threshold`: protection threshold read by ingress
+- `classic_protection_budget`: remaining Classic protection credits after the ingress decision
+- `classic_protection_threshold`: protection budget cap read by ingress
 - `qdepth_sample`: sampled dequeue queue depth
 - `enq_qdepth_sample`: sampled enqueue queue depth
 - `delay_sample`: sampled dequeue time delta
@@ -306,6 +308,7 @@ The current register layout is:
 - `reg_l4s_threshold`
 - `reg_classic_threshold`
 - `reg_classic_protection_threshold`
+- `reg_classic_protection_budget`
 - `reg_l4s_qdepth`
 - `reg_classic_qdepth`
 - `reg_l4s_delay`
@@ -324,7 +327,7 @@ The current `p4src` code already supports:
 - IPv4 parsing,
 - ECN-based L4S/Classic classification,
 - two-queue traffic separation,
-- starvation protection for Classic traffic by temporarily demoting new L4S packets when the Classic backlog is high,
+- starvation protection for Classic traffic by temporarily demoting new L4S packets when ingress has observed Classic demand,
 - IPv4 forwarding through an LPM table,
 - per-class threshold-based CE marking,
 - per-class queue telemetry export through registers,
@@ -336,6 +339,7 @@ The current code does **not** yet implement:
 
 - coupled AQM behavior between the two classes,
 - weighted scheduling or precise fairness guarantees between queues,
+- exact live cross-queue occupancy reads in ingress,
 - dynamic threshold adaptation inside the dataplane,
 - a single-queue mode,
 - richer per-port or per-flow register indexing.
@@ -351,7 +355,7 @@ If someone wants to understand the code quickly, the core idea is:
 
 - ingress uses ECN to decide whether a packet is L4S or Classic,
 - the packet is mapped to one of two BMv2 queues using `standard_metadata.priority`,
-- if the Classic queue backlog is too high, new L4S packets are temporarily redirected into the Classic queue,
+- if Classic arrivals have built protection budget, new L4S packets are temporarily redirected into the Classic queue,
 - egress checks the queue depth against a class-specific threshold,
 - if the threshold is crossed, the packet is marked with `CE`,
 - recent queue measurements are stored in registers for external monitoring or controller logic.
