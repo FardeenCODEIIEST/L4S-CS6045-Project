@@ -65,7 +65,7 @@ The current packet processing flow is:
 3. For IPv4 packets, classify the packet using the IPv4 ECN field.
 4. Assign the IPv4 packet to either the Classic queue or the L4S queue.
 5. If recent Classic arrivals have built protection budget, temporarily demote new L4S packets to the Classic queue.
-6. Forward IPv4 packets using the IPv4 LPM table.
+6. Drop IPv4 packets whose TTL would expire, otherwise forward IPv4 packets using the IPv4 LPM table.
 7. Forward non-IPv4 Ethernet traffic, including ARP, using the L2 forwarding table.
 8. In egress, read queue metadata and the queue-specific threshold for IPv4 packets.
 9. If the queue depth is above threshold, set ECN to `CE` for ECN-capable packets.
@@ -170,17 +170,18 @@ This is the anti-starvation logic in the current code. The idea is simple:
 
 The forwarding table supports:
 
-- `set_nhop(bit<48> dst_addr, bit<9> port)`
+- `set_nhop(bit<48> dst_addr, bit<48> src_addr, bit<9> port)`
 - `drop()`
 - `NoAction`
 
 `set_nhop` updates:
 
 - Ethernet destination MAC,
-- IPv4 TTL,
+- Ethernet source MAC for the outgoing link,
+- IPv4 TTL decrement,
 - egress port (`standard_metadata.egress_spec`).
 
-The default action is `drop()`.
+Packets with `ttl <= 1` are dropped before the IPv4 LPM table is applied, so the pipeline does not wrap TTL to `255` or forward an expired packet. The default action is `drop()`.
 
 Non-IPv4 Ethernet traffic follows a separate `l2_forward` table. This is primarily needed for ARP in Mininet experiments:
 

@@ -37,8 +37,9 @@ control IngressImpl(inout headers_t hdr,
         mark_to_drop(standard_metadata);
     }
 
-    action set_nhop(bit<48> dst_addr, bit<9> port) {
+    action set_nhop(bit<48> dst_addr, bit<48> src_addr, bit<9> port) {
         hdr.ethernet.dst_addr = dst_addr;
+        hdr.ethernet.src_addr = src_addr;
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
         standard_metadata.egress_spec = port;
     }
@@ -133,7 +134,11 @@ control IngressImpl(inout headers_t hdr,
 
             meta.classic_protection_budget = classic_protection_budget;
             standard_metadata.priority = meta.queue_id;
-            ipv4_lpm.apply();
+            if (hdr.ipv4.ttl <= 1) {
+                drop();
+            } else {
+                ipv4_lpm.apply();
+            }
         } else {
             standard_metadata.priority = CLASSIC_QUEUE_ID;
             l2_forward.apply();
