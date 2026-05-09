@@ -12,6 +12,7 @@ parser ParserImpl(packet_in packet,
         packet.extract(hdr.ethernet);
         transition select(hdr.ethernet.ether_type) {
             TYPE_IPV4: parse_ipv4;
+            TYPE_ARP: accept;
             default: accept;
         }
     }
@@ -42,12 +43,34 @@ control IngressImpl(inout headers_t hdr,
         standard_metadata.egress_spec = port;
     }
 
+    action set_egress(bit<9> port) {
+        standard_metadata.egress_spec = port;
+    }
+
+    action set_mcast_grp(bit<16> mcast_grp) {
+        standard_metadata.mcast_grp = mcast_grp;
+    }
+
     table ipv4_lpm {
         key = {
             hdr.ipv4.dst_addr: lpm;
         }
         actions = {
             set_nhop;
+            drop;
+            NoAction;
+        }
+        size = 1024;
+        default_action = drop();
+    }
+
+    table l2_forward {
+        key = {
+            hdr.ethernet.dst_addr: exact;
+        }
+        actions = {
+            set_egress;
+            set_mcast_grp;
             drop;
             NoAction;
         }
@@ -72,6 +95,9 @@ control IngressImpl(inout headers_t hdr,
             if ((hdr.ipv4.ecn == ECN_ECT1) || (hdr.ipv4.ecn == ECN_CE)) {
                 meta.is_l4s = 1;
                 meta.queue_id = L4S_QUEUE_ID;
+            } else if ((hdr.ipv4.ecn == ECN_NOT_ECT) || (hdr.ipv4.ecn == ECN_ECT0)) {
+                meta.is_l4s = 0;
+                meta.queue_id = CLASSIC_QUEUE_ID;
             }
 
             classic_qdepth_snapshot = 0;
@@ -97,6 +123,9 @@ control IngressImpl(inout headers_t hdr,
 
             standard_metadata.priority = meta.queue_id;
             ipv4_lpm.apply();
+        } else {
+            standard_metadata.priority = CLASSIC_QUEUE_ID;
+            l2_forward.apply();
         }
     }
 }

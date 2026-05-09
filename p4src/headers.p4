@@ -4,6 +4,7 @@
 #include <core.p4>
 
 const bit<16> TYPE_IPV4 = 0x0800;
+const bit<16> TYPE_ARP  = 0x0806;
 
 const bit<2> ECN_NOT_ECT = 0b00;
 const bit<2> ECN_ECT1    = 0b01;
