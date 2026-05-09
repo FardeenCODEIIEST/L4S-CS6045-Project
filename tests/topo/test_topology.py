@@ -53,3 +53,12 @@ def test_simple_switch_command_places_target_options_after_separator():
     assert command[separator - 1] == "build/l4s.json"
     assert command[separator + 1 :] == ["--priority-queues", "2"]
     assert command.index("-i") < separator
+
+
+def test_runtime_commands_initialize_controller_telemetry_registers():
+    commands = build_runtime_commands()
+
+    assert "register_write reg_l4s_qdepth 0 0" in commands
+    assert "register_write reg_classic_qdepth 0 0" in commands
+    assert "register_write reg_l4s_growth 0 0" in commands
+    assert "register_write reg_classic_growth 0 0" in commands

@@ -116,7 +116,8 @@ Declares all P4 registers shared between the data plane and the control plane:
 
 ### 2. Control Plane Controller (`controller/`)
 
-Written in **Python 3** using the BMv2 thrift runtime API .
+Written in **Python 3** using BMv2's `simple_switch_CLI` thrift frontend for
+register reads and writes.
 
 #### `controller/controller.py` — Main Controller Loop
 
@@ -130,11 +131,16 @@ while True:
 
 The controller is only active in the **dynamic-threshold variant**. In the static variant, thresholds are written once at startup and the controller loop is not run.
 
+The current controller implementation is intentionally lightweight: it invokes
+`simple_switch_CLI` for register reads/writes and writes a JSON-lines threshold
+trace. This keeps the runtime dependency small while preserving the intended
+control-plane/data-plane split.
+
 #### `controller/threshold_policy.py` — Threshold Update Logic
 
 Implements the threshold computation function
 
-Configurable knobs (set via some `config.yaml`):
+Configurable knobs exposed as controller CLI arguments:
 
 | Parameter | Description |
 |---|---|
@@ -146,9 +152,14 @@ Configurable knobs (set via some `config.yaml`):
 | `MIN_THRESH` | Hard lower bound on threshold. |
 | `MAX_THRESH` | Hard upper bound on threshold. |
 
+The policy tightens when Classic backlog, L4S queue growth, or L4S queue delay
+cross configured thresholds. It relaxes when both queues are in a healthy low
+range.
+
 #### `controller/runtime_api.py`
 
-Thin wrapper around BMv2's thrift runtime for register read/write operations.
+Thin wrapper around BMv2's `simple_switch_CLI` runtime for register read/write
+operations.
 
 ---
 
@@ -168,7 +179,7 @@ h4 (Classic sender) ──┘
 - BMv2 is launched with `--priority-queues 2` to enable multi-queue mode.
 - The topology configures host routes, static gateway ARP entries, P4 forwarding entries, and threshold registers.
 - The topology disables checksum/segmentation offloads on Mininet interfaces so BMv2 sees complete TCP checksums.
-- The dynamic controller is still a separate pending component; once implemented, it should be started after the topology and BMv2 runtime state are ready.
+- Dynamic mode starts the lightweight controller after the topology and BMv2 runtime state are ready.
 
 Preview generated BMv2 runtime commands:
 
@@ -192,6 +203,12 @@ Run one non-interactive fixed-threshold traffic experiment:
 
 ```bash
 sudo python3 topo/topology.py --run-fixed --experiment-duration 30 --output-dir results/fixed
+```
+
+Run one non-interactive dynamic-threshold traffic experiment:
+
+```bash
+sudo python3 topo/topology.py --run-dynamic --experiment-duration 30 --output-dir results/dynamic
 ```
 
 Inside the interactive Mininet CLI, run traffic with the receiver in the

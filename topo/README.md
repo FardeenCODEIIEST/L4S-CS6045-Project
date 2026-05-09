@@ -61,6 +61,19 @@ sudo python3 topo/topology.py --run-fixed --experiment-duration 30 --output-dir 
 The runner returns result-file ownership to the user who invoked `sudo`, so
 post-processing can run without `sudo`.
 
+Run one dynamic-threshold traffic experiment:
+
+```bash
+sudo python3 topo/topology.py --run-dynamic --experiment-duration 30 --output-dir results/dynamic
+```
+
+This starts `controller/controller.py` while traffic is active and writes a
+JSON-lines threshold trace to:
+
+```text
+results/dynamic/controller_trace.jsonl
+```
+
 Useful Mininet checks:
 
 ```bash
@@ -85,5 +98,6 @@ than an empty or interrupted run:
 mininet> h5 ls -lh results/fixed
 ```
 
-The dynamic controller is not started by this topology yet. Once `controller/`
-exists, the dynamic experiment runner should start it after BMv2 is configured.
+The controller currently uses `simple_switch_CLI` for register reads/writes.
+This is intentionally simple and slower than a persistent thrift client, but it
+is adequate for one-second threshold updates in the project prototype.

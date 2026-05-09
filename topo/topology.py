@@ -530,6 +530,64 @@ def run_fixed_experiment(
     return 1 if failures else 0
 
 
+def run_dynamic_experiment(
+    net: Mininet,
+    output_dir: str | Path,
+    duration_s: int,
+    l4s_bw_mbps: float,
+    classic_bw_mbps: float,
+    thrift_port: int,
+    cli_path: str,
+    controller_interval_s: float,
+) -> int:
+    """Run one traffic experiment while the dynamic threshold controller runs."""
+
+    output_dir = Path(output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    controller_log = output_dir / "controller_trace.jsonl"
+    try:
+        controller_log.unlink()
+    except FileNotFoundError:
+        pass
+
+    controller_script = REPO_ROOT / "controller" / "controller.py"
+    controller = subprocess.Popen(
+        [
+            "python3",
+            str(controller_script),
+            "--thrift-port",
+            str(thrift_port),
+            "--cli-path",
+            cli_path,
+            "--interval",
+            str(controller_interval_s),
+            "--log",
+            str(controller_log),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    time.sleep(controller_interval_s)
+
+    try:
+        return run_fixed_experiment(
+            net=net,
+            output_dir=output_dir,
+            duration_s=duration_s,
+            l4s_bw_mbps=l4s_bw_mbps,
+            classic_bw_mbps=classic_bw_mbps,
+        )
+    finally:
+        controller.terminate()
+        code, output = _wait_process("dynamic controller", controller, 5)
+        print("--- dynamic controller output ---")
+        print(output.strip())
+        if code not in (0, -15):
+            print(f"[WARN] dynamic controller exited with code {code}")
+        restore_output_ownership(output_dir)
+
+
 def wait_for_port(host: str, port: int, timeout_s: float = 5.0) -> bool:
     """Wait for BMv2 thrift to accept connections."""
 
@@ -583,9 +641,11 @@ def create_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--classic-protection-threshold", type=int, default=16)
     parser.add_argument("--smoke-test", action="store_true", help="run h1/h3 to h5 pings and exit")
     parser.add_argument("--run-fixed", action="store_true", help="run one fixed-threshold traffic experiment and exit")
+    parser.add_argument("--run-dynamic", action="store_true", help="run one dynamic-threshold traffic experiment and exit")
     parser.add_argument("--experiment-duration", type=int, default=30)
     parser.add_argument("--l4s-bw", type=float, default=4.0)
     parser.add_argument("--classic-bw", type=float, default=4.0)
+    parser.add_argument("--controller-interval", type=float, default=1.0)
     parser.add_argument("--output-dir", default=str(REPO_ROOT / "results" / "fixed"))
     parser.add_argument("--no-cli", action="store_true", help="start and configure, then exit")
     parser.add_argument("--dry-run", action="store_true", help="print runtime commands only")
@@ -646,6 +706,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 duration_s=args.experiment_duration,
                 l4s_bw_mbps=args.l4s_bw,
                 classic_bw_mbps=args.classic_bw,
+            )
+        if args.run_dynamic:
+            return run_dynamic_experiment(
+                net=net,
+                output_dir=args.output_dir,
+                duration_s=args.experiment_duration,
+                l4s_bw_mbps=args.l4s_bw,
+                classic_bw_mbps=args.classic_bw,
+                thrift_port=args.thrift_port,
+                cli_path=args.cli_path,
+                controller_interval_s=args.controller_interval,
             )
         if not args.no_cli:
             CLI(net)
