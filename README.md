@@ -105,6 +105,8 @@ Declares all P4 registers shared between the data plane and the control plane:
 |---|---|---|
 | `reg_l4s_threshold` | 32-bit | Current ECN marking threshold for the L4S queue (depth or delay units). |
 | `reg_classic_threshold` | 32-bit | Current ECN marking threshold for the Classic queue. |
+| `reg_classic_protection_threshold` | 32-bit | Maximum ingress Classic protection budget; `0` disables L4S demotion for Classic protection. |
+| `reg_classic_protection_budget` | 32-bit | Current ingress-observed Classic protection credits consumed by later L4S demotions. |
 | `reg_l4s_qdepth` | 32-bit | Latest sampled L4S queue depth (written each packet, read by controller). |
 | `reg_classic_qdepth` | 32-bit | Latest sampled Classic queue depth. |
 | `reg_l4s_delay` | 32-bit | Latest `deq_timedelta` for the L4S queue. |

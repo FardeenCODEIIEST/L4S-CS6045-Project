@@ -30,8 +30,8 @@ control VerifyChecksumImpl(inout headers_t hdr, inout l4s_meta_t meta) {
 control IngressImpl(inout headers_t hdr,
                     inout l4s_meta_t meta,
                     inout standard_metadata_t standard_metadata) {
-    bit<32> classic_qdepth_snapshot;
     bit<32> classic_protection_threshold;
+    bit<32> classic_protection_budget;
 
     action drop() {
         mark_to_drop(standard_metadata);
@@ -83,7 +83,7 @@ control IngressImpl(inout headers_t hdr,
         meta.queue_id = CLASSIC_QUEUE_ID;
         meta.classic_protection_triggered = 0;
         meta.current_threshold = 0;
-        meta.classic_qdepth_snapshot = 0;
+        meta.classic_protection_budget = 0;
         meta.classic_protection_threshold = 0;
         meta.qdepth_sample = 0;
         meta.enq_qdepth_sample = 0;
@@ -100,27 +100,38 @@ control IngressImpl(inout headers_t hdr,
                 meta.queue_id = CLASSIC_QUEUE_ID;
             }
 
-            classic_qdepth_snapshot = 0;
             classic_protection_threshold = 0;
-            reg_classic_qdepth.read(classic_qdepth_snapshot, REG_INDEX);
+            classic_protection_budget = 0;
             reg_classic_protection_threshold.read(classic_protection_threshold, REG_INDEX);
+            reg_classic_protection_budget.read(classic_protection_budget, REG_INDEX);
 
-            meta.classic_qdepth_snapshot = classic_qdepth_snapshot;
             meta.classic_protection_threshold = classic_protection_threshold;
 
             /*
              * Anti-starvation guard:
-             * when the Classic queue is already backlogged, temporarily stop
-             * feeding new L4S packets into the higher-priority queue so it can
-             * drain and the scheduler can serve Classic traffic.
+             * ingress cannot directly read the live Classic queue occupancy.
+             * Native Classic arrivals therefore build a small protection budget;
+             * later L4S arrivals consume that budget by entering the Classic
+             * queue instead of refilling the higher-priority queue.
              */
-            if ((meta.queue_id == L4S_QUEUE_ID) &&
-                (classic_protection_threshold > 0) &&
-                (classic_qdepth_snapshot >= classic_protection_threshold)) {
-                meta.queue_id = CLASSIC_QUEUE_ID;
-                meta.classic_protection_triggered = 1;
+            if (classic_protection_threshold > 0) {
+                if (meta.is_l4s == 0) {
+                    if (classic_protection_budget < classic_protection_threshold) {
+                        classic_protection_budget = classic_protection_budget + 1;
+                        reg_classic_protection_budget.write(REG_INDEX, classic_protection_budget);
+                    }
+                } else if (classic_protection_budget > 0) {
+                    classic_protection_budget = classic_protection_budget - 1;
+                    reg_classic_protection_budget.write(REG_INDEX, classic_protection_budget);
+                    meta.queue_id = CLASSIC_QUEUE_ID;
+                    meta.classic_protection_triggered = 1;
+                }
+            } else if (classic_protection_budget > 0) {
+                classic_protection_budget = 0;
+                reg_classic_protection_budget.write(REG_INDEX, classic_protection_budget);
             }
 
+            meta.classic_protection_budget = classic_protection_budget;
             standard_metadata.priority = meta.queue_id;
             ipv4_lpm.apply();
         } else {
