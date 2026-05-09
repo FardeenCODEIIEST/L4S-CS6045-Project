@@ -10,6 +10,8 @@ implemented.
 |---|---|
 | `tests/static/` | Compiles the P4 program and checks generated BMv2 JSON shape. |
 | `tests/traffic/` | Unit-tests traffic script behavior with subprocess/sysctl operations mocked. |
+| `tests/topo/` | Unit-tests topology host mapping and generated BMv2 runtime commands. |
+| `tests/eval/` | Unit-tests pcap text parsing and summary helpers. |
 | `tests/p4runtime/` | BMv2/PTF runtime-test scaffold for future packet-level dataplane tests. |
 | `tests/proposal/` | `xfail` checks for proposal components that are documented but not implemented yet. |
 
@@ -46,7 +48,8 @@ These tests require `p4c-bm2-ss`. If the compiler is missing, the tests skip.
 ## Traffic Tests
 
 `tests/traffic/` covers the Python scripts under `traffic/` without launching
-real system commands. The tests verify:
+real system commands. `tests/topo/` similarly checks topology command
+generation without starting Mininet or BMv2. The tests verify:
 
 - load-profile bandwidth and timing calculations
 - invalid `--l4s-fraction` rejection
@@ -54,6 +57,9 @@ real system commands. The tests verify:
 - L4S and Classic `iperf3` command construction
 - Classic ECN vs non-ECN sysctl choices
 - receiver `tcpdump` command construction
+- stable topology host-to-switch port mapping
+- generated `ipv4_lpm`, `l2_forward`, and register initialization commands
+- ECN codepoint counting from tcpdump pcap text
 
 ## Runtime Scaffold
 
@@ -74,8 +80,9 @@ from the project proposal:
 
 - `controller.threshold_policy`
 - `controller.runtime_api`
-- `topo.topology`
-- `eval.parse_pcap`
 
 These tests are marked `xfail` with `strict=True`, so they record missing
-proposal work without failing the current branch.
+proposal work without failing the current branch. `topo.topology` has moved out
+of this pending list because the Mininet topology scaffold is now implemented.
+`eval.parse_pcap` has also moved out because the first pcap parser is now
+implemented.

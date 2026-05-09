@@ -23,6 +23,7 @@ import subprocess
 import sys
 import os
 import signal
+import shutil
 
 
 IPTABLES_ADD = [
@@ -41,6 +42,13 @@ SYSCTL_DCTCP = {
     "net.ipv4.tcp_ecn":                "1",   # Enable ECN negotiation
     "net.ipv4.tcp_ecn_fallback":       "0",   # Do not fall back if peer lacks ECN
 }
+
+
+def require_tool(name):
+    if shutil.which(name) is None:
+        print(f"[ERROR] Missing required command: {name}")
+        print("        Install it on the Mininet host system, e.g. sudo apt install iperf3 iptables")
+        sys.exit(1)
 
 
 def run(cmd, check=True, capture=False):
@@ -91,8 +99,13 @@ def remove_iptables_rule():
 
 
 def run_iperf3(dst, port, bandwidth_mbps, duration_s, parallel, output_file):
+    try:
+        os.remove(output_file)
+    except FileNotFoundError:
+        pass
     cmd = [
         "iperf3",
+        "-4",
         "-c", dst,
         "-p", str(port),
         "-b", f"{bandwidth_mbps}M",
@@ -122,6 +135,8 @@ def main():
     if os.geteuid() != 0:
         print("[ERROR] Must run as root (required for sysctl and iptables)")
         sys.exit(1)
+    require_tool("iperf3")
+    require_tool("iptables")
 
     saved_sysctl = apply_sysctl(SYSCTL_DCTCP)
     add_iptables_rule()
@@ -129,13 +144,18 @@ def main():
     proc = run_iperf3(args.dst, args.port, args.bandwidth,
                       args.duration, args.parallel, args.output)
 
+    cleaned_up = False
+
     def cleanup(signum=None, frame=None):
+        nonlocal cleaned_up
+        if cleaned_up:
+            return
+        cleaned_up = True
         if proc.poll() is None:
             proc.terminate()
         if not args.no_cleanup:
             remove_iptables_rule()
             apply_sysctl(SYSCTL_DCTCP, restore=True, saved=saved_sysctl)
-        sys.exit(0)
 
     signal.signal(signal.SIGINT,  cleanup)
     signal.signal(signal.SIGTERM, cleanup)

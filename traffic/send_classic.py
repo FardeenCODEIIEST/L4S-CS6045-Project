@@ -22,6 +22,7 @@ import subprocess
 import sys
 import os
 import signal
+import shutil
 
 SYSCTL_CUBIC_ECN = {
     "net.ipv4.tcp_congestion_control": "cubic",
@@ -31,6 +32,13 @@ SYSCTL_CUBIC_NO_ECN = {
     "net.ipv4.tcp_congestion_control": "cubic",
     "net.ipv4.tcp_ecn":                "0",
 }
+
+
+def require_tool(name):
+    if shutil.which(name) is None:
+        print(f"[ERROR] Missing required command: {name}")
+        print("        Install it on the Mininet host system, e.g. sudo apt install iperf3")
+        sys.exit(1)
 
 
 def run(cmd, check=True, capture=False):
@@ -62,8 +70,13 @@ def apply_sysctl(settings, restore=False, saved=None):
 
 
 def run_iperf3(dst, port, bandwidth_mbps, duration_s, parallel, output_file):
+    try:
+        os.remove(output_file)
+    except FileNotFoundError:
+        pass
     cmd = [
         "iperf3",
+        "-4",
         "-c", dst,
         "-p", str(port),
         "-b", f"{bandwidth_mbps}M",
@@ -96,6 +109,7 @@ def main():
     if os.geteuid() != 0:
         print("[ERROR] Must run as root (required for sysctl)")
         sys.exit(1)
+    require_tool("iperf3")
 
     settings = SYSCTL_CUBIC_ECN if args.ecn else SYSCTL_CUBIC_NO_ECN
     saved_sysctl = apply_sysctl(settings)
@@ -103,12 +117,17 @@ def main():
     proc = run_iperf3(args.dst, args.port, args.bandwidth,
                       args.duration, args.parallel, args.output)
 
+    cleaned_up = False
+
     def cleanup(signum=None, frame=None):
+        nonlocal cleaned_up
+        if cleaned_up:
+            return
+        cleaned_up = True
         if proc.poll() is None:
             proc.terminate()
         if not args.no_cleanup:
             apply_sysctl(settings, restore=True, saved=saved_sysctl)
-        sys.exit(0)
 
     signal.signal(signal.SIGINT,  cleanup)
     signal.signal(signal.SIGTERM, cleanup)
