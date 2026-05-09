@@ -166,7 +166,42 @@ h4 (Classic sender) ──┘
 - All sender–switch links: configurable bandwidth and delay.
 - Switch–receiver link: the **bottleneck link** with a reduced bandwidth cap to induce some level of congestion.
 - BMv2 is launched with `--priority-queues 2` to enable multi-queue mode.
-- The controller process is started as a background thread/process after the topology comes up.
+- The topology configures host routes, static gateway ARP entries, P4 forwarding entries, and threshold registers.
+- The topology disables checksum/segmentation offloads on Mininet interfaces so BMv2 sees complete TCP checksums.
+- The dynamic controller is still a separate pending component; once implemented, it should be started after the topology and BMv2 runtime state are ready.
+
+Preview generated BMv2 runtime commands:
+
+```bash
+python3 topo/topology.py --dry-run
+```
+
+Start the interactive topology:
+
+```bash
+sudo python3 topo/topology.py
+```
+
+Run a non-interactive connectivity check:
+
+```bash
+sudo python3 topo/topology.py --smoke-test
+```
+
+Run one non-interactive fixed-threshold traffic experiment:
+
+```bash
+sudo python3 topo/topology.py --run-fixed --experiment-duration 30 --output-dir results/fixed
+```
+
+Inside the interactive Mininet CLI, run traffic with the receiver in the
+background before starting clients:
+
+```bash
+mininet> h5 sudo python3 traffic/recv.py --iface h5-eth0 --duration 45 --output-dir results/fixed &
+mininet> h1 sudo python3 traffic/send_l4s.py --dst 10.0.5.5 --port 5201 --bandwidth 4 --duration 30 --output results/fixed/l4s_client.json &
+mininet> h3 sudo python3 traffic/send_classic.py --dst 10.0.5.5 --port 5202 --bandwidth 4 --duration 30 --ecn --output results/fixed/classic_client.json &
+```
 
 #### `topo/config.yaml` — Topology and Experiment Parameters
 
@@ -206,9 +241,33 @@ Orchestrates time-varying load experiments (steady, ramp, step, burst, mixed) by
 #### `eval/parse_pcap.py`
 
 Parses `.pcap` captures taken at sender and receiver to compute:
-- **Per-packet queueing delay** (timestamp delta between sender TX and receiver RX, corrected for propagation).
-- **ECN marking rate** — fraction of packets received with CE mark.
-- **Drop rate** — inferred from sequence number gaps.
+- **ECN marking rate** — fraction of forward-direction packets received with CE mark.
+- **ECN codepoint counts** — Not-ECT, ECT(0), ECT(1), and CE per traffic class.
+- **Payload packet and byte counts** per class.
+
+Current parser scope is intentionally narrow: it summarizes receiver-side pcaps
+from this topology using `tcpdump` output. Latency and drop inference can be
+added after sender-side captures exist.
+
+Run the fixed experiment summarizer:
+
+```bash
+python3 -m eval.summarize_results results/fixed
+```
+
+This writes:
+
+```text
+results/fixed/summary.json
+results/fixed/summary.csv
+```
+
+If `results/fixed` was created before the topology returned file ownership to
+the invoking user, either rerun `--run-fixed` or preview without writing:
+
+```bash
+python3 -m eval.summarize_results results/fixed --no-write
+```
 
 #### `eval/plot_results.py`
 
