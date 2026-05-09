@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# P4/BMv2 build outputs and logs
+build/
+out/
+*.p4info
+*.p4info.txt
+*.bmv2.json
+p4src/*.json
+simple_switch*.log
+bmv2*.log
+
+# Experiment and traffic artifacts
+results/
+captures/
+*.pcap
+*.pcapng
+iperf3_*.json
+*_iperf3.json
+stage*_l4s.json
+stage*_classic.json
+*.log
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
