@@ -2,7 +2,7 @@
 
 This document explains the current `p4src` implementation for the L4S project. It is written to help a reader understand what the code is doing today, how packets move through the pipeline, and what parts of the design are already implemented.
 
-The current branch is expected to be `feature/p4src`, and the implementation in this folder is a **two-queue BMv2 design**:
+The current staging implementation in this folder is a **two-queue BMv2 design**:
 
 - Queue `0`: Classic / non-L4S traffic
 - Queue `1`: L4S traffic
@@ -14,6 +14,7 @@ This design assumes BMv2 is started with two priority queues, for example with `
 The purpose of the `p4src` component is to:
 
 - parse Ethernet and IPv4 packets,
+- forward non-IPv4 Ethernet control traffic such as ARP through an L2 table,
 - classify traffic as **L4S** or **Classic** using the IPv4 ECN field,
 - place the packet into one of two queues,
 - protect Classic traffic from starvation when its queue backlog becomes too high,
@@ -61,14 +62,15 @@ The current packet processing flow is:
 
 1. Parse Ethernet.
 2. If the EtherType is IPv4, parse the IPv4 header.
-3. In ingress, classify the packet using the IPv4 ECN field.
-4. Assign the packet to either the Classic queue or the L4S queue.
+3. For IPv4 packets, classify the packet using the IPv4 ECN field.
+4. Assign the IPv4 packet to either the Classic queue or the L4S queue.
 5. If the Classic queue is already backlogged, temporarily demote new L4S packets to the Classic queue.
-6. Forward the packet using the IPv4 LPM table.
-7. In egress, read queue metadata and the queue-specific threshold.
-8. If the queue depth is above threshold, set ECN to `CE` for ECN-capable packets.
-9. Write queue telemetry back to registers for controller use.
-10. Recompute the IPv4 checksum and emit the packet.
+6. Forward IPv4 packets using the IPv4 LPM table.
+7. Forward non-IPv4 Ethernet traffic, including ARP, using the L2 forwarding table.
+8. In egress, read queue metadata and the queue-specific threshold for IPv4 packets.
+9. If the queue depth is above threshold, set ECN to `CE` for ECN-capable packets.
+10. Write queue telemetry back to registers for controller use.
+11. Recompute the IPv4 checksum and emit the packet.
 
 ## ECN-Based Traffic Classification
 
@@ -177,6 +179,21 @@ The forwarding table supports:
 - egress port (`standard_metadata.egress_spec`).
 
 The default action is `drop()`.
+
+Non-IPv4 Ethernet traffic follows a separate `l2_forward` table. This is primarily needed for ARP in Mininet experiments:
+
+- exact-match unicast entries can use `set_egress(bit<9> port)`,
+- broadcast or unknown-destination entries can use `set_mcast_grp(bit<16> mcast_grp)` when the BMv2 runtime config installs a matching multicast group,
+- the default action remains `drop()` so unsupported EtherTypes do not leak through accidentally.
+
+Example runtime setup shape:
+
+```text
+table_add l2_forward set_egress <host-mac> => <egress-port>
+table_add l2_forward set_mcast_grp ff:ff:ff:ff:ff:ff => <arp-broadcast-group>
+```
+
+The multicast group itself must be created in `simple_switch_CLI` or by the control plane with the ports that should receive ARP broadcasts.
 
 ## Egress Logic Explained
 
