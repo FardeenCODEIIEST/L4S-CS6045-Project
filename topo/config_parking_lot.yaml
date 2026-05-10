@@ -1,0 +1,13 @@
+# Inter-switch bottleneck link bandwidths
+bn1_bw_mbps: 10     # s1 -> s2
+bn2_bw_mbps: 10     # s2 -> s3
+sender_bw_mbps: 100
+link_delay_ms: 5
+queue_size_pkts: 100
+priority_queues: 2
+thrift_port_s1: 9090
+thrift_port_s2: 9091
+thrift_port_s3: 9092
+l4s_threshold: 30
+classic_threshold: 80
+classic_protection_threshold: 16
