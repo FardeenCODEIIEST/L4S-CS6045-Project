@@ -154,7 +154,7 @@ Configurable knobs exposed as controller CLI arguments:
 
 The policy tightens when Classic backlog, L4S queue growth, or L4S queue delay
 cross configured thresholds. It relaxes when both queues are in a healthy low
-range.
+range and neither queue is showing growth.
 
 #### `controller/runtime_api.py`
 

@@ -35,6 +35,18 @@ def test_policy_relaxes_when_queues_are_healthy():
     assert decision.action == "relax"
 
 
+def test_policy_holds_when_classic_growth_is_visible():
+    decision = compute_threshold(
+        30,
+        QueueSignals(l4s_qdepth=0, classic_qdepth=0, l4s_delay=0, l4s_growth=0, classic_growth=8),
+        ThresholdPolicyConfig(relax_step=2),
+    )
+
+    assert decision.threshold == 30
+    assert decision.action == "hold"
+    assert decision.reason == "within_band"
+
+
 def test_policy_clamps_threshold():
     decision = compute_threshold(
         6,
