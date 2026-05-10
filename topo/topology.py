@@ -14,6 +14,7 @@ IPv4 packets but does not implement an ARP responder for router interfaces.
 
 from __future__ import annotations
 
+import yaml
 import argparse
 import os
 import shlex
@@ -47,6 +48,7 @@ DEFAULT_P4_FILE = REPO_ROOT / "p4src" / "l4s.p4"
 DEFAULT_JSON = REPO_ROOT / "build" / "l4s.json"
 DEFAULT_SWITCH_PATH = "simple_switch"
 DEFAULT_CLI_PATH = "simple_switch_CLI"
+DEFAULT_CONFIG = REPO_ROOT / "topo" / "config.yaml"
 
 
 @dataclass(frozen=True)
@@ -247,6 +249,10 @@ def build_simple_switch_command(
     )
     return command
 
+
+def load_config(path: str) -> dict:
+    with open(path) as f:
+        return yaml.safe_load(f)
 
 def build_notifications_addr(device_id: int, thrift_port: int) -> str:
     """Return a per-run BMv2 notifications socket address.
@@ -685,6 +691,8 @@ def create_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sender-bw", type=int, default=100, help="sender links in Mbps")
     parser.add_argument("--bottleneck-bw", type=int, default=10, help="receiver link in Mbps")
     parser.add_argument("--delay-ms", type=int, default=5)
+    parser.add_argument("--config", default=DEFAULT_CONFIG,
+                    help="Path to config.yaml")
     parser.add_argument("--queue-size", type=int, default=100)
     parser.add_argument(
         "--bmv2-queue-rate-pps",
@@ -718,10 +726,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = create_arg_parser()
     args = parser.parse_args(argv)
 
+    cfg = load_config(args.config)
+
+    cfg = load_config(args.config)
+
     commands = build_runtime_commands(
-        l4s_threshold=args.l4s_threshold,
-        classic_threshold=args.classic_threshold,
-        classic_protection_threshold=args.classic_protection_threshold,
+        l4s_threshold=cfg['l4s_threshold'],
+        classic_threshold=cfg['classic_threshold'],
+        classic_protection_threshold=cfg['classic_protection_threshold'],
         bmv2_queue_rate_pps=args.bmv2_queue_rate_pps,
         bmv2_queue_depth_pkts=args.bmv2_queue_depth,
     )
@@ -740,16 +752,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     json_path = compile_p4(args.p4_file, args.json)
     setLogLevel("info")
-
     topo = L4SBottleneckTopo(
-        sender_bw_mbps=args.sender_bw,
-        bottleneck_bw_mbps=args.bottleneck_bw,
-        link_delay_ms=args.delay_ms,
-        queue_size_pkts=args.queue_size,
+        sender_bw_mbps=cfg['sender_bw_mbps'],
+        bottleneck_bw_mbps=cfg['bottleneck_bw_mbps'],
+        link_delay_ms=cfg['link_delay_ms'],
+        queue_size_pkts=cfg['queue_size_pkts'],
         sw_path=args.switch,
         json_path=json_path,
-        thrift_port=args.thrift_port,
-        priority_queues=args.priority_queues,
+        thrift_port=cfg['thrift_port'],
+        priority_queues=cfg['priority_queues'],
     )
     net = Mininet(topo=topo, link=TCLink, controller=None, autoSetMacs=False)
 
