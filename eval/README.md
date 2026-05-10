@@ -8,9 +8,10 @@ Post-processing pipeline for L4S experiment results.
 
 | File | Input | Output |
 |---|---|---|
+| `parse_ecn.py` | `capture.pcap` | Console JSON summary of per-class ECN codepoint counts and CE rate |
 | `parse_pcap.py` | `capture.pcap`, `iperf3_*.json` | `packets.csv`, `throughput.csv`, `marking_rate.csv` |
 | `stats.py` | CSVs from parse_pcap | Console summary + `summary_<variant>.json` |
-| `plot_results.py` | CSVs or summary JSONs | PDF plots |
+| `plot_results.py` | CSVs or summary JSONs | PNG plots |
 
 ---
 
@@ -20,9 +21,36 @@ Post-processing pipeline for L4S experiment results.
 pip install scapy matplotlib numpy
 ```
 
+`parse_ecn.py` requires `tcpdump` to be installed and available in PATH.
+
 ---
 
 ## Workflow
+
+### Step 0 — Quick ECN sanity check (optional but recommended)
+
+Before full parsing, verify CE marking happened at all:
+
+```bash
+python3 eval/parse_ecn.py results/capture.pcap \
+    --receiver-ip 10.0.5.5 \
+    --l4s-port 5201 \
+    --classic-port 5202
+```
+
+Prints a JSON summary to stdout:
+
+```json
+{
+  "classes": {
+    "l4s":     { "packets": 12000, "ce_packets": 340, "ce_rate": 0.028 },
+    "classic": { "packets": 11800, "ce_packets":  92, "ce_rate": 0.007 }
+  }
+}
+```
+
+If `ce_rate` is 0 for both classes, the thresholds are too high or traffic
+never congested the queue — check register values before proceeding.
 
 ### Step 1 — Parse raw results
 
@@ -60,9 +88,10 @@ python3 eval/plot_results.py --input-dir eval_out/fixed/ --variant fixed
 ```
 
 Produces in `eval_out/fixed/`:
-- `ecn_marking_rate.pdf` — CE rate over time, L4S vs Classic
-- `throughput.pdf` — throughput timeline
-- `ecn_distribution.pdf` — ECN codepoint bar chart
+- `ecn_marking_rate.png` — CE rate over time, L4S vs Classic
+- `throughput.png` — throughput timeline
+- `ecn_distribution.png` — ECN codepoint bar chart
+
 
 ### Step 4 — Cross-variant comparison
 
@@ -77,9 +106,9 @@ python3 eval/plot_results.py --compare \
 ```
 
 Produces in `eval_out/comparison/`:
-- `cross_variant_marking.pdf` — CE rate across all variants
-- `fairness_comparison.pdf` — Jain fairness index bar chart
-- `throughput_comparison.pdf` — mean throughput per class per variant
+- `cross_variant_marking.png` — CE rate across all variants
+- `fairness_comparison.png` — Jain fairness index bar chart
+- `throughput_comparison.png` — mean throughput per class per variant
 
 ---
 
@@ -97,3 +126,8 @@ Produces in `eval_out/comparison/`:
 ## Key Result to Show
 
 The central claim of the paper: **the dynamic-threshold design preserves most of the L4S latency benefit while reducing Classic starvation compared to the fixed-threshold design.**
+
+Evidence comes from:
+1. CE marking rate for L4S is lower in dynamic vs fixed (threshold adapted when Classic was starved)
+2. Classic throughput share is higher in dynamic vs fixed
+3. Jain fairness index is higher in dynamic vs fixed
