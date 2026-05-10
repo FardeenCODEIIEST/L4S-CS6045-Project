@@ -288,6 +288,27 @@ the invoking user, either rerun `--run-fixed` or preview without writing:
 python3 -m eval.summarize_results results/fixed --no-write
 ```
 
+Run the project suite helper for checks, experiments, and aggregate report
+tables:
+
+```bash
+# P4 compile plus Python tests
+python3 scripts/run_project_suite.py checks --python .venv/bin/python
+
+# Run all built-in fixed/dynamic experiment cases
+python3 scripts/run_project_suite.py experiments
+
+# Summarize built-in result directories into results/summary.csv and .json
+python3 scripts/run_project_suite.py summarize --skip-missing
+
+# End-to-end: checks, experiments, aggregate summaries
+python3 scripts/run_project_suite.py all --python .venv/bin/python
+```
+
+Experiment execution uses `sudo` automatically when the script is not already
+running as root, because Mininet and BMv2 need elevated privileges. Use
+`--dry-run` on any subcommand to preview the commands first.
+
 #### `eval/plot_results.py`
 
 Generates plots comparing the three design variants:
