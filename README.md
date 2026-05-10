@@ -175,7 +175,9 @@ h4 (Classic sender) ──┘
 ```
 
 - All sender–switch links: configurable bandwidth and delay.
-- Switch–receiver link: the **bottleneck link** with a reduced bandwidth cap to induce some level of congestion.
+- Switch–receiver path: the receiver link has a reduced bandwidth cap, and BMv2
+  also applies a receiver-port `set_queue_rate` cap so queue buildup is visible
+  to P4 egress metadata.
 - BMv2 is launched with `--priority-queues 2` to enable multi-queue mode.
 - The topology configures host routes, static gateway ARP entries, P4 forwarding entries, and threshold registers.
 - The topology disables checksum/segmentation offloads on Mininet interfaces so BMv2 sees complete TCP checksums.

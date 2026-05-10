@@ -40,6 +40,17 @@ def test_runtime_commands_initialize_threshold_registers():
     assert "register_write reg_classic_protection_budget 0 0" in commands
 
 
+def test_runtime_commands_can_configure_bmv2_receiver_queue():
+    commands = build_runtime_commands(
+        bmv2_queue_rate_pps=800,
+        bmv2_queue_depth_pkts=100,
+        bmv2_queue_port=5,
+    )
+
+    assert commands[0] == "set_queue_rate 800 5"
+    assert commands[1] == "set_queue_depth 100 5"
+
+
 def test_simple_switch_command_places_target_options_after_separator():
     command = build_simple_switch_command(
         sw_path="simple_switch",
@@ -53,6 +64,21 @@ def test_simple_switch_command_places_target_options_after_separator():
     assert command[separator - 1] == "build/l4s.json"
     assert command[separator + 1 :] == ["--priority-queues", "2"]
     assert command.index("-i") < separator
+
+
+def test_simple_switch_command_can_override_notifications_addr():
+    command = build_simple_switch_command(
+        sw_path="simple_switch",
+        json_path="build/l4s.json",
+        thrift_port=9090,
+        priority_queues=2,
+        notifications_addr="ipc:///tmp/l4s-bmv2-test.ipc",
+    )
+
+    separator = command.index("--")
+    option_index = command.index("--notifications-addr")
+    assert command[option_index + 1] == "ipc:///tmp/l4s-bmv2-test.ipc"
+    assert option_index < separator
 
 
 def test_runtime_commands_initialize_controller_telemetry_registers():

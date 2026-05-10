@@ -138,6 +138,7 @@ class BMv2Switch(Switch):
         self.device_id = int(device_id)
         self.log_file = str(log_file or REPO_ROOT / "build" / f"{name}.log")
         self.simple_switch_pid: int | None = None
+        self.notifications_addr: str | None = None
 
     def start(self, controllers):  # noqa: D401 - Mininet API signature
         intf_args = []
@@ -147,6 +148,8 @@ class BMv2Switch(Switch):
             port = self.ports[intf]
             intf_args.extend(["-i", f"{port}@{intf.name}"])
 
+        self.notifications_addr = build_notifications_addr(self.device_id, self.thrift_port)
+        cleanup_ipc_addr(self.notifications_addr)
         Path(self.log_file).parent.mkdir(parents=True, exist_ok=True)
         cmd = build_simple_switch_command(
             sw_path=self.sw_path,
@@ -155,6 +158,7 @@ class BMv2Switch(Switch):
             priority_queues=self.priority_queues,
             device_id=self.device_id,
             interface_args=intf_args,
+            notifications_addr=self.notifications_addr,
         )
         cmd_str = " ".join(shlex.quote(part) for part in cmd)
         pid_text = self.cmd(f"{cmd_str} > {shlex.quote(self.log_file)} 2>&1 & echo $!").strip()
@@ -168,6 +172,9 @@ class BMv2Switch(Switch):
         if self.simple_switch_pid is not None:
             self.cmd(f"kill {self.simple_switch_pid}")
             self.simple_switch_pid = None
+        if self.notifications_addr:
+            cleanup_ipc_addr(self.notifications_addr)
+            self.notifications_addr = None
         super().stop(deleteIntfs=deleteIntfs)
 
 
@@ -216,21 +223,53 @@ def build_simple_switch_command(
     priority_queues: int,
     device_id: int = 0,
     interface_args: Sequence[str] = (),
+    notifications_addr: str | None = None,
 ) -> list[str]:
     """Build a simple_switch command with target options after '--'."""
 
-    return [
+    command = [
         sw_path,
         "--device-id",
         str(device_id),
         "--thrift-port",
         str(thrift_port),
-        *interface_args,
-        str(json_path),
-        "--",
-        "--priority-queues",
-        str(priority_queues),
     ]
+    if notifications_addr:
+        command.extend(["--notifications-addr", notifications_addr])
+    command.extend(
+        [
+            *interface_args,
+            str(json_path),
+            "--",
+            "--priority-queues",
+            str(priority_queues),
+        ]
+    )
+    return command
+
+
+def build_notifications_addr(device_id: int, thrift_port: int) -> str:
+    """Return a per-run BMv2 notifications socket address.
+
+    BMv2's default notification address is keyed only by device id, so rapid
+    consecutive Mininet runs can collide with a stale socket and prevent thrift
+    from starting.
+    """
+
+    unique = f"{os.getpid()}-{int(time.time() * 1000)}"
+    return f"ipc:///tmp/l4s-bmv2-{device_id}-{thrift_port}-{unique}-notifications.ipc"
+
+
+def cleanup_ipc_addr(address: str) -> None:
+    """Remove a filesystem-backed IPC socket if BMv2 left one behind."""
+
+    if not address.startswith("ipc://"):
+        return
+    path = Path(address.removeprefix("ipc://"))
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def build_runtime_commands(
@@ -238,10 +277,21 @@ def build_runtime_commands(
     l4s_threshold: int = 30,
     classic_threshold: int = 80,
     classic_protection_threshold: int = 16,
+    bmv2_queue_rate_pps: int | None = None,
+    bmv2_queue_depth_pkts: int | None = None,
+    bmv2_queue_port: int | None = None,
 ) -> list[str]:
     """Return simple_switch_CLI commands for forwarding and registers."""
 
     commands: list[str] = []
+    if bmv2_queue_port is None:
+        bmv2_queue_port = next(spec.switch_port for spec in hosts if spec.role == "receiver")
+
+    if bmv2_queue_rate_pps and bmv2_queue_rate_pps > 0:
+        commands.append(f"set_queue_rate {bmv2_queue_rate_pps} {bmv2_queue_port}")
+    if bmv2_queue_depth_pkts and bmv2_queue_depth_pkts > 0:
+        commands.append(f"set_queue_depth {bmv2_queue_depth_pkts} {bmv2_queue_port}")
+
     for spec in hosts:
         commands.append(
             "table_add IngressImpl.ipv4_lpm IngressImpl.set_nhop "
@@ -636,6 +686,18 @@ def create_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bottleneck-bw", type=int, default=10, help="receiver link in Mbps")
     parser.add_argument("--delay-ms", type=int, default=5)
     parser.add_argument("--queue-size", type=int, default=100)
+    parser.add_argument(
+        "--bmv2-queue-rate-pps",
+        type=int,
+        default=800,
+        help="BMv2 packet-per-second cap on the receiver egress port; 0 disables",
+    )
+    parser.add_argument(
+        "--bmv2-queue-depth",
+        type=int,
+        default=100,
+        help="BMv2 receiver egress queue depth in packets; 0 leaves BMv2 default",
+    )
     parser.add_argument("--l4s-threshold", type=int, default=30)
     parser.add_argument("--classic-threshold", type=int, default=80)
     parser.add_argument("--classic-protection-threshold", type=int, default=16)
@@ -660,6 +722,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         l4s_threshold=args.l4s_threshold,
         classic_threshold=args.classic_threshold,
         classic_protection_threshold=args.classic_protection_threshold,
+        bmv2_queue_rate_pps=args.bmv2_queue_rate_pps,
+        bmv2_queue_depth_pkts=args.bmv2_queue_depth,
     )
     if args.dry_run:
         print("\n".join(commands))
