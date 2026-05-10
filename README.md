@@ -116,7 +116,8 @@ Declares all P4 registers shared between the data plane and the control plane:
 
 ### 2. Control Plane Controller (`controller/`)
 
-Written in **Python 3** using the BMv2 thrift runtime API .
+Written in **Python 3** using BMv2's `simple_switch_CLI` thrift frontend for
+register reads and writes.
 
 #### `controller/controller.py` — Main Controller Loop
 
@@ -130,11 +131,16 @@ while True:
 
 The controller is only active in the **dynamic-threshold variant**. In the static variant, thresholds are written once at startup and the controller loop is not run.
 
+The current controller implementation is intentionally lightweight: it invokes
+`simple_switch_CLI` for register reads/writes and writes a JSON-lines threshold
+trace. This keeps the runtime dependency small while preserving the intended
+control-plane/data-plane split.
+
 #### `controller/threshold_policy.py` — Threshold Update Logic
 
 Implements the threshold computation function
 
-Configurable knobs (set via some `config.yaml`):
+Configurable knobs exposed as controller CLI arguments:
 
 | Parameter | Description |
 |---|---|
@@ -146,9 +152,14 @@ Configurable knobs (set via some `config.yaml`):
 | `MIN_THRESH` | Hard lower bound on threshold. |
 | `MAX_THRESH` | Hard upper bound on threshold. |
 
+The policy tightens when Classic backlog, L4S queue growth, or L4S queue delay
+cross configured thresholds. It relaxes when both queues are in a healthy low
+range and neither queue is showing growth.
+
 #### `controller/runtime_api.py`
 
-Thin wrapper around BMv2's thrift runtime for register read/write operations.
+Thin wrapper around BMv2's `simple_switch_CLI` runtime for register read/write
+operations.
 
 ---
 
@@ -164,9 +175,52 @@ h4 (Classic sender) ──┘
 ```
 
 - All sender–switch links: configurable bandwidth and delay.
-- Switch–receiver link: the **bottleneck link** with a reduced bandwidth cap to induce some level of congestion.
+- Switch–receiver path: the receiver link has a reduced bandwidth cap, and BMv2
+  also applies a receiver-port `set_queue_rate` cap so queue buildup is visible
+  to P4 egress metadata.
 - BMv2 is launched with `--priority-queues 2` to enable multi-queue mode.
-- The controller process is started as a background thread/process after the topology comes up.
+- The topology configures host routes, static gateway ARP entries, P4 forwarding entries, and threshold registers.
+- The topology disables checksum/segmentation offloads on Mininet interfaces so BMv2 sees complete TCP checksums.
+- Dynamic mode starts the lightweight controller after the topology and BMv2 runtime state are ready.
+
+Preview generated BMv2 runtime commands:
+
+```bash
+python3 topo/topology.py --dry-run
+```
+
+Start the interactive topology:
+
+```bash
+sudo python3 topo/topology.py
+```
+
+Run a non-interactive connectivity check:
+
+```bash
+sudo python3 topo/topology.py --smoke-test
+```
+
+Run one non-interactive fixed-threshold traffic experiment:
+
+```bash
+sudo python3 topo/topology.py --run-fixed --experiment-duration 30 --output-dir results/fixed
+```
+
+Run one non-interactive dynamic-threshold traffic experiment:
+
+```bash
+sudo python3 topo/topology.py --run-dynamic --experiment-duration 30 --output-dir results/dynamic
+```
+
+Inside the interactive Mininet CLI, run traffic with the receiver in the
+background before starting clients:
+
+```bash
+mininet> h5 sudo python3 traffic/recv.py --iface h5-eth0 --duration 45 --output-dir results/fixed &
+mininet> h1 sudo python3 traffic/send_l4s.py --dst 10.0.5.5 --port 5201 --bandwidth 4 --duration 30 --output results/fixed/l4s_client.json &
+mininet> h3 sudo python3 traffic/send_classic.py --dst 10.0.5.5 --port 5202 --bandwidth 4 --duration 30 --ecn --output results/fixed/classic_client.json &
+```
 
 #### `topo/config.yaml` — Topology and Experiment Parameters
 
@@ -206,9 +260,54 @@ Orchestrates time-varying load experiments (steady, ramp, step, burst, mixed) by
 #### `eval/parse_pcap.py`
 
 Parses `.pcap` captures taken at sender and receiver to compute:
-- **Per-packet queueing delay** (timestamp delta between sender TX and receiver RX, corrected for propagation).
-- **ECN marking rate** — fraction of packets received with CE mark.
-- **Drop rate** — inferred from sequence number gaps.
+- **ECN marking rate** — fraction of forward-direction packets received with CE mark.
+- **ECN codepoint counts** — Not-ECT, ECT(0), ECT(1), and CE per traffic class.
+- **Payload packet and byte counts** per class.
+
+Current parser scope is intentionally narrow: it summarizes receiver-side pcaps
+from this topology using `tcpdump` output. Latency and drop inference can be
+added after sender-side captures exist.
+
+Run the fixed experiment summarizer:
+
+```bash
+python3 -m eval.summarize_results results/fixed
+```
+
+This writes:
+
+```text
+results/fixed/summary.json
+results/fixed/summary.csv
+```
+
+If `results/fixed` was created before the topology returned file ownership to
+the invoking user, either rerun `--run-fixed` or preview without writing:
+
+```bash
+python3 -m eval.summarize_results results/fixed --no-write
+```
+
+Run the project suite helper for checks, experiments, and aggregate report
+tables:
+
+```bash
+# P4 compile plus Python tests
+python3 scripts/run_project_suite.py checks --python .venv/bin/python
+
+# Run all built-in fixed/dynamic experiment cases
+python3 scripts/run_project_suite.py experiments
+
+# Summarize built-in result directories into results/summary.csv and .json
+python3 scripts/run_project_suite.py summarize --skip-missing
+
+# End-to-end: checks, experiments, aggregate summaries
+python3 scripts/run_project_suite.py all --python .venv/bin/python
+```
+
+Experiment execution uses `sudo` automatically when the script is not already
+running as root, because Mininet and BMv2 need elevated privileges. Use
+`--dry-run` on any subcommand to preview the commands first.
 
 #### `eval/plot_results.py`
 
