@@ -1,4 +1,4 @@
-from eval.parse_pcap import parse_tcpdump_text
+from eval.parse_ecn import parse_tcpdump_text
 
 
 TCPDUMP_TEXT = """\
