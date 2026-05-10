@@ -76,6 +76,7 @@ def compute_threshold(
         signals.l4s_qdepth <= config.healthy_l4s_qdepth
         and signals.classic_qdepth <= config.healthy_classic_qdepth
         and signals.l4s_growth == 0
+        and signals.classic_growth == 0
     ):
         return ThresholdDecision(
             threshold=clamp(current + config.relax_step, config.min_threshold, config.max_threshold),
