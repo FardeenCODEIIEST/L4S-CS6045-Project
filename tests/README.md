@@ -13,6 +13,7 @@ implemented.
 | `tests/topo/` | Unit-tests topology host mapping and generated BMv2 runtime commands. |
 | `tests/eval/` | Unit-tests pcap text parsing and summary helpers. |
 | `tests/controller/` | Unit-tests the dynamic-threshold policy and runtime output parser. |
+| `tests/scripts/` | Unit-tests project-suite report aggregation helpers. |
 | `tests/p4runtime/` | BMv2/PTF runtime-test scaffold for future packet-level dataplane tests. |
 | `tests/proposal/` | Smoke checks for proposal components that have been promoted into implemented modules. |
 
@@ -62,6 +63,7 @@ generation without starting Mininet or BMv2. The tests verify:
 - generated `ipv4_lpm`, `l2_forward`, and register initialization commands
 - ECN codepoint counting from tcpdump pcap text
 - dynamic threshold decisions and `simple_switch_CLI` register parsing
+- aggregate report rows and controller-trace action counts
 
 ## Runtime Scaffold
 
