@@ -13,7 +13,9 @@ h4 Classic sender   /
 ```
 
 The sender links default to 100 Mbps. The `s1` to `h5` receiver link defaults
-to 10 Mbps and is the bottleneck.
+to 10 Mbps. The experiment also installs a BMv2 egress queue rate cap on the
+receiver port, so queue buildup is visible through BMv2 queue metadata rather
+than only through Linux `tc`.
 
 ## Runtime Model
 
@@ -28,6 +30,7 @@ The topology script installs:
 
 - one `IngressImpl.ipv4_lpm` `/32` route per host,
 - one `IngressImpl.l2_forward` unicast entry per host,
+- BMv2 `set_queue_rate` and `set_queue_depth` on the receiver egress port,
 - initial threshold, protection, and telemetry register values.
 - checksum/segmentation offloads are disabled on Mininet interfaces so BMv2
   forwards TCP packets with valid checksums.
@@ -61,6 +64,19 @@ sudo python3 topo/topology.py --run-fixed --experiment-duration 30 --output-dir 
 The runner returns result-file ownership to the user who invoked `sudo`, so
 post-processing can run without `sudo`.
 
+Run one dynamic-threshold traffic experiment:
+
+```bash
+sudo python3 topo/topology.py --run-dynamic --experiment-duration 30 --output-dir results/dynamic
+```
+
+This starts `controller/controller.py` while traffic is active and writes a
+JSON-lines threshold trace to:
+
+```text
+results/dynamic/controller_trace.jsonl
+```
+
 Useful Mininet checks:
 
 ```bash
@@ -85,5 +101,6 @@ than an empty or interrupted run:
 mininet> h5 ls -lh results/fixed
 ```
 
-The dynamic controller is not started by this topology yet. Once `controller/`
-exists, the dynamic experiment runner should start it after BMv2 is configured.
+The controller currently uses `simple_switch_CLI` for register reads/writes.
+This is intentionally simple and slower than a persistent thrift client, but it
+is adequate for one-second threshold updates in the project prototype.

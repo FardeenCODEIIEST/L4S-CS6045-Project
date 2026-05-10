@@ -12,8 +12,9 @@ implemented.
 | `tests/traffic/` | Unit-tests traffic script behavior with subprocess/sysctl operations mocked. |
 | `tests/topo/` | Unit-tests topology host mapping and generated BMv2 runtime commands. |
 | `tests/eval/` | Unit-tests pcap text parsing and summary helpers. |
+| `tests/controller/` | Unit-tests the dynamic-threshold policy and runtime output parser. |
 | `tests/p4runtime/` | BMv2/PTF runtime-test scaffold for future packet-level dataplane tests. |
-| `tests/proposal/` | `xfail` checks for proposal components that are documented but not implemented yet. |
+| `tests/proposal/` | Smoke checks for proposal components that have been promoted into implemented modules. |
 
 ## Running Tests
 
@@ -60,6 +61,7 @@ generation without starting Mininet or BMv2. The tests verify:
 - stable topology host-to-switch port mapping
 - generated `ipv4_lpm`, `l2_forward`, and register initialization commands
 - ECN codepoint counting from tcpdump pcap text
+- dynamic threshold decisions and `simple_switch_CLI` register parsing
 
 ## Runtime Scaffold
 
@@ -76,13 +78,6 @@ starts BMv2, installs runtime table/register state, and wires test interfaces.
 ## Proposal Pending Tests
 
 `tests/proposal/test_pending_components.py` documents expected future modules
-from the project proposal:
-
-- `controller.threshold_policy`
-- `controller.runtime_api`
-
-These tests are marked `xfail` with `strict=True`, so they record missing
-proposal work without failing the current branch. `topo.topology` has moved out
-of this pending list because the Mininet topology scaffold is now implemented.
-`eval.parse_pcap` has also moved out because the first pcap parser is now
+from the project proposal. `topo.topology`, `eval.parse_pcap`, and the first
+controller modules have moved out of this pending list because they are now
 implemented.
