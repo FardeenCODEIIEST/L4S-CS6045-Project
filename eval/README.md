@@ -92,7 +92,6 @@ Produces in `eval_out/fixed/`:
 - `throughput.png` — throughput timeline
 - `ecn_distribution.png` — ECN codepoint bar chart
 
-All plots are 3.5" wide at 300 DPI, suitable for IEEE single-column figures.
 
 ### Step 4 — Cross-variant comparison
 
