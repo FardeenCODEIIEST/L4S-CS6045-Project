@@ -234,3 +234,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Re-export parse_pcap so that eval.summarize_results can import it from here.
+from eval.parse_ecn import parse_pcap
