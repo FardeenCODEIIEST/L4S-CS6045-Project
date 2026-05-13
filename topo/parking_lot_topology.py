@@ -40,6 +40,7 @@ from topo.topology import (
     build_runtime_commands,
     configure_switch,
     disable_offloads,
+    info,
     wait_for_port,
     wait_for_host_listen,
     compile_p4,

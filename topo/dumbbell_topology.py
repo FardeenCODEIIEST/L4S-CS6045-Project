@@ -36,6 +36,7 @@ from topo.topology import (
     build_runtime_commands,
     configure_hosts,
     configure_switch,
+    info,
     wait_for_port,
     wait_for_host_listen,
     compile_p4,
