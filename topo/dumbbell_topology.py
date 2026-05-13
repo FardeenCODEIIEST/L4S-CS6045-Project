@@ -27,20 +27,12 @@ import yaml
 from pathlib import Path
 from typing import Sequence
 
-try:
-    from mininet.cli import CLI
-    from mininet.link import TCLink
-    from mininet.log import info, setLogLevel
-    from mininet.net import Mininet
-    from mininet.node import Host
-except ModuleNotFoundError:  # pragma: no cover - exercised only off Mininet hosts
-    CLI = None
-    TCLink = None
-    Mininet = None
-    Host = object
-
 from topo.topology import (
     BMv2Switch,
+    CLI,
+    Host,
+    Mininet,
+    TCLink,
     build_runtime_commands,
     configure_hosts,
     configure_switch,
@@ -55,6 +47,7 @@ from topo.topology import (
     DEFAULT_JSON,
     DEFAULT_SWITCH_PATH,
     DEFAULT_CLI_PATH,
+    setLogLevel,
     HOSTS as S1_HOSTS,
 )
 

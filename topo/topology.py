@@ -41,6 +41,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised only off Mininet hos
     Host = object
     Switch = object
     Topo = object
+    setLogLevel = None
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
