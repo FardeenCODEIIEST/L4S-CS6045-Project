@@ -88,7 +88,7 @@ def run_experiment_case(
     mode_flag = "--run-fixed" if case.mode == "fixed" else "--run-dynamic"
     run_command(
         [
-            *prefix,
+            "sudo",
             "python3",
             "topo/topology.py",
             mode_flag,

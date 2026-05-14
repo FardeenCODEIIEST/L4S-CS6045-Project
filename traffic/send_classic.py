@@ -32,6 +32,7 @@ SYSCTL_CUBIC_NO_ECN = {
     "net.ipv4.tcp_congestion_control": "cubic",
     "net.ipv4.tcp_ecn":                "0",
 }
+CLASSIC_CONGESTION_CONTROL = "cubic"
 
 
 def require_tool(name):
@@ -82,6 +83,7 @@ def run_iperf3(dst, port, bandwidth_mbps, duration_s, parallel, output_file):
         "-b", f"{bandwidth_mbps}M",
         "-t", str(int(duration_s)),
         "-P", str(parallel),
+        "-C", CLASSIC_CONGESTION_CONTROL,
         "-J",
         "--logfile", output_file,
     ]

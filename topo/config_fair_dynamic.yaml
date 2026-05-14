@@ -1,0 +1,49 @@
+# Fairness-oriented dynamic L4S/Classic experiment profile.
+#
+# The top-level keys are consumed by topo/topology.py today. The controller
+# section mirrors controller/controller.py CLI parameters so the same profile can
+# be used to launch the dynamic controller without changing controller logic.
+
+bottleneck_bw_mbps: 10
+sender_bw_mbps: 100
+link_delay_ms: 5
+queue_size_pkts: 100
+priority_queues: 2
+thrift_port: 9090
+
+# Start closer to the controller's fair-share operating point observed in
+# results/fixed_dynamic/controller_trace.jsonl, where L4S spent most samples at
+# 5-9 packets while Classic still only received about 20% of throughput.
+l4s_threshold: 8
+
+# Avoid early Classic self-throttling. The current fixed/dynamic runs show CE
+# rates near 4% for both classes, but Classic still loses share, so Classic
+# should be protected primarily by L4S demotion/marking rather than by lowering
+# Classic's own marking threshold.
+classic_threshold: 100
+
+# Increase the ingress anti-starvation budget so Classic arrivals can more
+# often pull subsequent L4S packets into the Classic queue.
+classic_protection_threshold: 32
+
+# Optional BMv2 queue shaping defaults already used by topology.py.
+bmv2_queue_rate_pps: 800
+bmv2_queue_depth_pkts: 100
+
+# Controller policy knobs for a fairness-biased dynamic run. topology.py reads
+# this section and passes the values as controller/controller.py CLI arguments.
+controller:
+  interval_s: 0.5
+  min_threshold: 3
+  max_threshold: 40
+  growth_high: 8
+  classic_backlog_threshold: 10
+  l4s_delay_high: 1000
+  healthy_l4s_qdepth: 3
+  healthy_classic_qdepth: 2
+  tighten_step: 8
+  relax_step: 1
+  classic_max_threshold: 120
+  classic_protection_max_threshold: 64
+  classic_adjust_step: 4
+  classic_relax_step: 1

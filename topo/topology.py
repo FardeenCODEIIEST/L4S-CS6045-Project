@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
 import shlex
 import shutil
 import socket
@@ -25,6 +26,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
+
+import yaml
 
 try:
     from mininet.cli import CLI
@@ -47,6 +50,35 @@ DEFAULT_P4_FILE = REPO_ROOT / "p4src" / "l4s.p4"
 DEFAULT_JSON = REPO_ROOT / "build" / "l4s.json"
 DEFAULT_SWITCH_PATH = "simple_switch"
 DEFAULT_CLI_PATH = "simple_switch_CLI"
+DEFAULT_CONFIG = REPO_ROOT / "topo" / "config.yaml"
+DEFAULT_CONFIG_VALUES = {
+    "sender_bw_mbps": 100,
+    "bottleneck_bw_mbps": 10,
+    "link_delay_ms": 5,
+    "queue_size_pkts": 100,
+    "priority_queues": 2,
+    "thrift_port": 9090,
+    "l4s_threshold": 30,
+    "classic_threshold": 80,
+    "classic_protection_threshold": 16,
+    "bmv2_queue_rate_pps": 800,
+    "bmv2_queue_depth_pkts": 100,
+}
+CONTROLLER_CONFIG_ARG_MAP = {
+    "min_threshold": "--min-threshold",
+    "max_threshold": "--max-threshold",
+    "growth_high": "--growth-high",
+    "classic_backlog_threshold": "--classic-backlog-threshold",
+    "l4s_delay_high": "--l4s-delay-high",
+    "healthy_l4s_qdepth": "--healthy-l4s-qdepth",
+    "healthy_classic_qdepth": "--healthy-classic-qdepth",
+    "tighten_step": "--tighten-step",
+    "relax_step": "--relax-step",
+    "classic_max_threshold": "--classic-max-threshold",
+    "classic_protection_max_threshold": "--classic-protection-max-threshold",
+    "classic_adjust_step": "--classic-adjust-step",
+    "classic_relax_step": "--classic-relax-step",
+}
 
 
 @dataclass(frozen=True)
@@ -260,6 +292,54 @@ def build_notifications_addr(device_id: int, thrift_port: int) -> str:
     return f"ipc:///tmp/l4s-bmv2-{device_id}-{thrift_port}-{unique}-notifications.ipc"
 
 
+def load_config(path: str | Path) -> dict[str, object]:
+    """Load topology defaults from YAML, falling back to built-in defaults."""
+
+    config_path = Path(path)
+    if not config_path.exists():
+        raise SystemExit(f"missing topology config: {config_path}")
+    with config_path.open() as handle:
+        loaded = yaml.safe_load(handle) or {}
+    if not isinstance(loaded, dict):
+        raise SystemExit(f"topology config must be a mapping: {config_path}")
+    return {**DEFAULT_CONFIG_VALUES, **loaded}
+
+
+def config_value(args: argparse.Namespace, config: dict[str, object], arg_name: str, config_key: str):
+    """Return an explicit CLI value, otherwise the config value."""
+
+    cli_value = getattr(args, arg_name)
+    return cli_value if cli_value is not None else config[config_key]
+
+
+def controller_config(config: dict[str, object]) -> dict[str, object]:
+    """Return the optional dynamic-controller config section."""
+
+    section = config.get("controller", {})
+    if section is None:
+        return {}
+    if not isinstance(section, dict):
+        raise SystemExit("controller config must be a mapping")
+    return section
+
+
+def build_controller_cli_args(config: dict[str, object]) -> list[str]:
+    """Translate YAML controller knobs into controller.py CLI arguments."""
+
+    section = controller_config(config)
+    allowed_keys = {*CONTROLLER_CONFIG_ARG_MAP, "interval_s"}
+    unknown_keys = sorted(set(section) - allowed_keys)
+    if unknown_keys:
+        raise SystemExit(f"unknown controller config keys: {', '.join(unknown_keys)}")
+
+    cli_args: list[str] = []
+    for key, flag in CONTROLLER_CONFIG_ARG_MAP.items():
+        value = section.get(key)
+        if value is not None:
+            cli_args.extend([flag, str(value)])
+    return cli_args
+
+
 def cleanup_ipc_addr(address: str) -> None:
     """Remove a filesystem-backed IPC socket if BMv2 left one behind."""
 
@@ -329,12 +409,46 @@ def configure_hosts(net: Mininet, hosts: Sequence[HostSpec] = HOSTS) -> None:
         host.cmd(f"ip route replace default via {spec.gateway_ip} dev {spec.name}-eth0")
         host.cmd(f"arp -s {spec.gateway_ip} {spec.gateway_mac}")
         disable_offloads(host, f"{spec.name}-eth0")
-        if spec.role == "l4s":
-            host.cmd('sysctl -w net.ipv4.tcp_allowed_congestion_control="reno cubic dctcp"')
 
     switch = net.get("s1")
     for spec in hosts:
         disable_offloads(switch, f"s1-eth{spec.switch_port}")
+
+
+def read_sysctl(key: str) -> str:
+    result = subprocess.run(
+        ["sysctl", "-n", key],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def write_sysctl(key: str, value: str) -> None:
+    subprocess.run(["sysctl", "-w", f"{key}={value}"], check=True)
+
+
+def ensure_dctcp_kernel_support() -> None:
+    """Load and allow DCTCP before Mininet creates host namespaces."""
+
+    if shutil.which("modprobe") is not None:
+        subprocess.run(["modprobe", "tcp_dctcp"], check=False)
+
+    available = read_sysctl("net.ipv4.tcp_available_congestion_control").split()
+    if "dctcp" not in available:
+        raise SystemExit(
+            "dctcp is not available in this kernel. Try: sudo modprobe tcp_dctcp"
+        )
+
+    allowed = read_sysctl("net.ipv4.tcp_allowed_congestion_control").split()
+    if "dctcp" in allowed:
+        return
+
+    write_sysctl("net.ipv4.tcp_allowed_congestion_control", " ".join([*allowed, "dctcp"]))
+    allowed = read_sysctl("net.ipv4.tcp_allowed_congestion_control").split()
+    if "dctcp" not in allowed:
+        raise SystemExit("failed to add dctcp to tcp_allowed_congestion_control")
 
 
 def disable_offloads(node, iface: str) -> None:
@@ -382,12 +496,39 @@ def run_smoke_tests(net: Mininet) -> int:
     return 1 if failures else 0
 
 
+def _terminate_process(proc: subprocess.Popen) -> None:
+    try:
+        proc.terminate()
+    except (PermissionError, ProcessLookupError, OSError):
+        try:
+            proc.kill()
+        except (PermissionError, ProcessLookupError, OSError):
+            pass
+
+
+def _interrupt_process(proc: subprocess.Popen) -> None:
+    try:
+        proc.send_signal(signal.SIGINT)
+    except (PermissionError, ProcessLookupError, OSError):
+        _terminate_process(proc)
+
+
 def _wait_process(name: str, proc: subprocess.Popen, timeout_s: float) -> tuple[int, str]:
     try:
         output, _ = proc.communicate(timeout=timeout_s)
     except subprocess.TimeoutExpired:
-        proc.terminate()
-        output, _ = proc.communicate(timeout=5)
+        _terminate_process(proc)
+        try:
+            output, _ = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+            except (PermissionError, ProcessLookupError, OSError):
+                pass
+            try:
+                output, _ = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                output = ""
         return 124, f"[{name}] timed out\n{output or ''}"
     return proc.returncode, output or ""
 
@@ -468,6 +609,7 @@ def run_fixed_experiment(
             str(output_files["pcap"]),
             "-s",
             "96",
+            "-U",
             "--immediate-mode",
             "tcp and (port 5201 or port 5202)",
         ],
@@ -510,7 +652,7 @@ def run_fixed_experiment(
 
     if not wait_for_host_listen(h5, [5201, 5202], timeout_s=5.0):
         for proc in (l4s_server, classic_server, tcpdump):
-            proc.terminate()
+            _terminate_process(proc)
         return 1
 
     l4s = h1.popen(
@@ -568,11 +710,11 @@ def run_fixed_experiment(
         if code != 0:
             failures += 1
 
-    tcpdump.terminate()
+    _interrupt_process(tcpdump)
     code, output = _wait_process("tcpdump", tcpdump, 5)
     print("--- tcpdump output ---")
     print(output.strip())
-    if code not in (0, -15):
+    if code not in (0, -signal.SIGINT, -signal.SIGTERM):
         failures += 1
 
     print(f"*** Fixed experiment output: {output_dir}")
@@ -589,6 +731,7 @@ def run_dynamic_experiment(
     thrift_port: int,
     cli_path: str,
     controller_interval_s: float,
+    controller_args: Sequence[str] = (),
 ) -> int:
     """Run one traffic experiment while the dynamic threshold controller runs."""
 
@@ -601,19 +744,21 @@ def run_dynamic_experiment(
         pass
 
     controller_script = REPO_ROOT / "controller" / "controller.py"
+    controller_cmd = [
+        "python3",
+        str(controller_script),
+        "--thrift-port",
+        str(thrift_port),
+        "--cli-path",
+        cli_path,
+        "--interval",
+        str(controller_interval_s),
+        "--log",
+        str(controller_log),
+        *controller_args,
+    ]
     controller = subprocess.Popen(
-        [
-            "python3",
-            str(controller_script),
-            "--thrift-port",
-            str(thrift_port),
-            "--cli-path",
-            cli_path,
-            "--interval",
-            str(controller_interval_s),
-            "--log",
-            str(controller_log),
-        ],
+        controller_cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -629,7 +774,7 @@ def run_dynamic_experiment(
             classic_bw_mbps=classic_bw_mbps,
         )
     finally:
-        controller.terminate()
+        _terminate_process(controller)
         code, output = _wait_process("dynamic controller", controller, 5)
         print("--- dynamic controller output ---")
         print(output.strip())
@@ -680,34 +825,35 @@ def create_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", default=str(DEFAULT_JSON), help="BMv2 JSON path")
     parser.add_argument("--switch", default=DEFAULT_SWITCH_PATH, help="simple_switch path")
     parser.add_argument("--cli-path", default=DEFAULT_CLI_PATH, help="simple_switch_CLI path")
-    parser.add_argument("--thrift-port", type=int, default=9090)
-    parser.add_argument("--priority-queues", type=int, default=2)
-    parser.add_argument("--sender-bw", type=int, default=100, help="sender links in Mbps")
-    parser.add_argument("--bottleneck-bw", type=int, default=10, help="receiver link in Mbps")
-    parser.add_argument("--delay-ms", type=int, default=5)
-    parser.add_argument("--queue-size", type=int, default=100)
+    parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Path to topology config YAML")
+    parser.add_argument("--thrift-port", type=int, default=None)
+    parser.add_argument("--priority-queues", type=int, default=None)
+    parser.add_argument("--sender-bw", type=int, default=None, help="sender links in Mbps")
+    parser.add_argument("--bottleneck-bw", type=int, default=None, help="receiver link in Mbps")
+    parser.add_argument("--delay-ms", type=int, default=None)
+    parser.add_argument("--queue-size", type=int, default=None)
     parser.add_argument(
         "--bmv2-queue-rate-pps",
         type=int,
-        default=800,
+        default=None,
         help="BMv2 packet-per-second cap on the receiver egress port; 0 disables",
     )
     parser.add_argument(
         "--bmv2-queue-depth",
         type=int,
-        default=100,
+        default=None,
         help="BMv2 receiver egress queue depth in packets; 0 leaves BMv2 default",
     )
-    parser.add_argument("--l4s-threshold", type=int, default=30)
-    parser.add_argument("--classic-threshold", type=int, default=80)
-    parser.add_argument("--classic-protection-threshold", type=int, default=16)
+    parser.add_argument("--l4s-threshold", type=int, default=None)
+    parser.add_argument("--classic-threshold", type=int, default=None)
+    parser.add_argument("--classic-protection-threshold", type=int, default=None)
     parser.add_argument("--smoke-test", action="store_true", help="run h1/h3 to h5 pings and exit")
     parser.add_argument("--run-fixed", action="store_true", help="run one fixed-threshold traffic experiment and exit")
     parser.add_argument("--run-dynamic", action="store_true", help="run one dynamic-threshold traffic experiment and exit")
     parser.add_argument("--experiment-duration", type=int, default=30)
     parser.add_argument("--l4s-bw", type=float, default=4.0)
     parser.add_argument("--classic-bw", type=float, default=4.0)
-    parser.add_argument("--controller-interval", type=float, default=1.0)
+    parser.add_argument("--controller-interval", type=float, default=None)
     parser.add_argument("--output-dir", default=str(REPO_ROOT / "results" / "fixed"))
     parser.add_argument("--no-cli", action="store_true", help="start and configure, then exit")
     parser.add_argument("--dry-run", action="store_true", help="print runtime commands only")
@@ -717,13 +863,34 @@ def create_arg_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = create_arg_parser()
     args = parser.parse_args(argv)
+    config = load_config(args.config)
+    thrift_port = int(config_value(args, config, "thrift_port", "thrift_port"))
+    priority_queues = int(config_value(args, config, "priority_queues", "priority_queues"))
+    sender_bw_mbps = int(config_value(args, config, "sender_bw", "sender_bw_mbps"))
+    bottleneck_bw_mbps = int(config_value(args, config, "bottleneck_bw", "bottleneck_bw_mbps"))
+    link_delay_ms = int(config_value(args, config, "delay_ms", "link_delay_ms"))
+    queue_size_pkts = int(config_value(args, config, "queue_size", "queue_size_pkts"))
+    bmv2_queue_rate_pps = int(config_value(args, config, "bmv2_queue_rate_pps", "bmv2_queue_rate_pps"))
+    bmv2_queue_depth_pkts = int(config_value(args, config, "bmv2_queue_depth", "bmv2_queue_depth_pkts"))
+    l4s_threshold = int(config_value(args, config, "l4s_threshold", "l4s_threshold"))
+    classic_threshold = int(config_value(args, config, "classic_threshold", "classic_threshold"))
+    classic_protection_threshold = int(
+        config_value(args, config, "classic_protection_threshold", "classic_protection_threshold")
+    )
+    dynamic_controller_config = controller_config(config)
+    controller_interval_s = float(
+        args.controller_interval
+        if args.controller_interval is not None
+        else dynamic_controller_config.get("interval_s", 1.0)
+    )
+    controller_cli_args = build_controller_cli_args(config)
 
     commands = build_runtime_commands(
-        l4s_threshold=args.l4s_threshold,
-        classic_threshold=args.classic_threshold,
-        classic_protection_threshold=args.classic_protection_threshold,
-        bmv2_queue_rate_pps=args.bmv2_queue_rate_pps,
-        bmv2_queue_depth_pkts=args.bmv2_queue_depth,
+        l4s_threshold=l4s_threshold,
+        classic_threshold=classic_threshold,
+        classic_protection_threshold=classic_protection_threshold,
+        bmv2_queue_rate_pps=bmv2_queue_rate_pps,
+        bmv2_queue_depth_pkts=bmv2_queue_depth_pkts,
     )
     if args.dry_run:
         print("\n".join(commands))
@@ -737,28 +904,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     require_tool(args.switch)
     require_tool(args.cli_path)
     require_tool("p4c-bm2-ss")
+    ensure_dctcp_kernel_support()
 
     json_path = compile_p4(args.p4_file, args.json)
     setLogLevel("info")
 
     topo = L4SBottleneckTopo(
-        sender_bw_mbps=args.sender_bw,
-        bottleneck_bw_mbps=args.bottleneck_bw,
-        link_delay_ms=args.delay_ms,
-        queue_size_pkts=args.queue_size,
+        sender_bw_mbps=sender_bw_mbps,
+        bottleneck_bw_mbps=bottleneck_bw_mbps,
+        link_delay_ms=link_delay_ms,
+        queue_size_pkts=queue_size_pkts,
         sw_path=args.switch,
         json_path=json_path,
-        thrift_port=args.thrift_port,
-        priority_queues=args.priority_queues,
+        thrift_port=thrift_port,
+        priority_queues=priority_queues,
     )
     net = Mininet(topo=topo, link=TCLink, controller=None, autoSetMacs=False)
 
     try:
         net.start()
         configure_hosts(net)
-        if not wait_for_port("127.0.0.1", args.thrift_port):
-            raise SystemExit(f"BMv2 thrift port {args.thrift_port} did not become ready")
-        configure_switch(args.thrift_port, commands, args.cli_path)
+        if not wait_for_port("127.0.0.1", thrift_port):
+            raise SystemExit(f"BMv2 thrift port {thrift_port} did not become ready")
+        configure_switch(thrift_port, commands, args.cli_path)
         info("*** Topology is configured\n")
         info("*** Sender hosts: h1/h2 L4S, h3/h4 Classic; receiver: h5\n")
         if args.smoke_test:
@@ -778,9 +946,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 duration_s=args.experiment_duration,
                 l4s_bw_mbps=args.l4s_bw,
                 classic_bw_mbps=args.classic_bw,
-                thrift_port=args.thrift_port,
+                thrift_port=thrift_port,
                 cli_path=args.cli_path,
-                controller_interval_s=args.controller_interval,
+                controller_interval_s=controller_interval_s,
+                controller_args=controller_cli_args,
             )
         if not args.no_cli:
             CLI(net)

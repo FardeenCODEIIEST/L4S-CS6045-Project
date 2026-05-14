@@ -1,4 +1,10 @@
-from topo.topology import HOSTS, build_runtime_commands, build_simple_switch_command
+from topo.topology import (
+    HOSTS,
+    build_controller_cli_args,
+    build_runtime_commands,
+    build_simple_switch_command,
+    main,
+)
 
 
 def test_topology_host_ports_are_stable():
@@ -88,3 +94,66 @@ def test_runtime_commands_initialize_controller_telemetry_registers():
     assert "register_write reg_classic_qdepth 0 0" in commands
     assert "register_write reg_l4s_growth 0 0" in commands
     assert "register_write reg_classic_growth 0 0" in commands
+
+
+def test_dry_run_reads_thresholds_from_config(tmp_path, capsys):
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "\n".join(
+            [
+                "l4s_threshold: 13",
+                "classic_threshold: 47",
+                "classic_protection_threshold: 9",
+                "bmv2_queue_rate_pps: 0",
+                "bmv2_queue_depth_pkts: 0",
+            ]
+        )
+        + "\n"
+    )
+
+    assert main(["--config", str(config), "--dry-run"]) == 0
+
+    output = capsys.readouterr().out
+    assert "register_write reg_l4s_threshold 0 13" in output
+    assert "register_write reg_classic_threshold 0 47" in output
+    assert "register_write reg_classic_protection_threshold 0 9" in output
+
+
+def test_cli_threshold_overrides_config(tmp_path, capsys):
+    config = tmp_path / "config.yaml"
+    config.write_text("l4s_threshold: 13\nclassic_threshold: 47\nclassic_protection_threshold: 9\n")
+
+    assert main(["--config", str(config), "--l4s-threshold", "31", "--dry-run"]) == 0
+
+    output = capsys.readouterr().out
+    assert "register_write reg_l4s_threshold 0 31" in output
+    assert "register_write reg_classic_threshold 0 47" in output
+
+
+def test_controller_config_builds_cli_args():
+    args = build_controller_cli_args(
+        {
+            "controller": {
+                "interval_s": 0.5,
+                "min_threshold": 3,
+                "max_threshold": 40,
+                "classic_backlog_threshold": 10,
+                "tighten_step": 8,
+                "classic_protection_max_threshold": 64,
+            }
+        }
+    )
+
+    assert "--interval" not in args
+    assert args == [
+        "--min-threshold",
+        "3",
+        "--max-threshold",
+        "40",
+        "--classic-backlog-threshold",
+        "10",
+        "--tighten-step",
+        "8",
+        "--classic-protection-max-threshold",
+        "64",
+    ]

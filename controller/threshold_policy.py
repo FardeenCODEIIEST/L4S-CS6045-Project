@@ -29,6 +29,10 @@ class ThresholdPolicyConfig:
     healthy_classic_qdepth: int = 5
     tighten_step: int = 5
     relax_step: int = 2
+    classic_max_threshold: int = 100
+    classic_protection_max_threshold: int = 32
+    classic_adjust_step: int = 2
+    classic_relax_step: int = 4
 
 
 @dataclass(frozen=True)

@@ -1,3 +1,6 @@
 pytest
 scapy
 ptf
+pyyaml
+thrift
+mininet
