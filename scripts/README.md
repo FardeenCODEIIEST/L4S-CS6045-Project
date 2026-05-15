@@ -111,7 +111,7 @@ done
 After the dynamic runs have completed and each result directory has a `summary.json`, compute confidence intervals:
 
 ```bash
-python3 scripts/run_ablation.py analyze
+sudo python3 scripts/run_ablation.py analyze
 ```
 
 This reads the dynamic result summaries and writes:
@@ -132,7 +132,7 @@ The CI metrics include:
 After the fixed runs have been summarized, generate the fixed baseline confidence interval JSON:
 
 ```bash
-python3 scripts/generate_fixed_baseline_ci.py
+sudo python3 scripts/generate_fixed_baseline_ci.py
 ```
 
 By default this reads:
@@ -150,7 +150,7 @@ results/ablation_plots/fixed_baseline_ci.json
 You can override the input pattern or output path:
 
 ```bash
-python3 scripts/generate_fixed_baseline_ci.py \
+sudo python3 scripts/generate_fixed_baseline_ci.py \
   --pattern "results/fixed_run_*" \
   --output results/ablation_plots/fixed_baseline_ci.json
 ```
@@ -160,7 +160,7 @@ python3 scripts/generate_fixed_baseline_ci.py \
 Generate heatmaps and CI error-bar plots:
 
 ```bash
-python3 scripts/plot_ablation.py
+sudo python3 scripts/plot_ablation.py
 ```
 
 Inputs:
@@ -186,7 +186,7 @@ Each CI error-bar plot is one figure for one `RelaxStep`. The blue curve shows t
 Use a custom output directory if needed:
 
 ```bash
-python3 scripts/plot_ablation.py --output-dir results/my_plots
+sudo python3 scripts/plot_ablation.py --output-dir results/my_plots
 ```
 
 ## End-to-End Command Order
