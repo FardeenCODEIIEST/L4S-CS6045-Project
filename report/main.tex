@@ -3,6 +3,7 @@
 \usepackage[a4paper,margin=0.75in]{geometry}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
+\usepackage{microtype}
 \usepackage{times}
 \usepackage{graphicx}
 \usepackage{xcolor}
@@ -27,7 +28,7 @@
 \setlength{\parskip}{0.35em}
 \setlength{\parindent}{1em}
 \captionsetup{font=small,labelfont=bf}
-\sloppy
+\emergencystretch=2em
 
 \title{\textbf{L4S-Aware Queueing in BMv2: ECN-Based Class Separation and Dynamic Threshold Control}}
 \author{
@@ -40,7 +41,7 @@ Kunal Umaji (CS25S020)
 \begin{document}
 \maketitle
 
-\noindent\textbf{Repository link:} TODO: insert public GitHub URL.
+\noindent\textbf{Repository link:} \url{https://github.com/FardeenCODEIIEST/L4S-CS6045-Project}
 
 \begin{abstract}
 Low-Latency, Low-Loss, and Scalable Throughput (L4S) separates scalable ECN-capable traffic from conventional Classic traffic so that shallow congestion marking can be applied to latency-sensitive flows without forcing all traffic into the same queueing behavior. This project implements an L4S-aware queueing prototype on BMv2 using P4 and Mininet. The P4 dataplane parses the IPv4 ECN field, classifies ECT(1) and CE packets as L4S, classifies Not-ECT and ECT(0) packets as Classic, maps the two classes to separate BMv2 priority queues, applies class-specific ECN marking in egress using queue-depth thresholds, and exports queue telemetry through registers. A lightweight Python controller reads these registers through \texttt{simple\_switch\_CLI} and dynamically adjusts the L4S marking threshold and Classic protection parameters.
@@ -64,7 +65,7 @@ The IPv4 ECN field contains two bits. Not-ECT identifies packets that are not EC
 
 The congestion-control behavior of the senders matters because ECN marking is only useful if end hosts react to it. The L4S sender uses DCTCP, which responds to the fraction of marked packets. Since Linux DCTCP normally emits ECT(0), the traffic script rewrites the ECN field of outgoing TCP packets to ECT(1) using an \texttt{iptables} mangle rule. The Classic sender uses TCP Cubic and can be run with ECN enabled, producing ECT(0) traffic that is still classified into the Classic queue. This setup is not a production L4S stack, but it is sufficient for a controlled experiment in which the switch can distinguish the two traffic classes.
 
-BMv2 provides the target features needed for the prototype. The ingress pipeline can write \texttt{standard\_metadata.priority}, allowing packets to be assigned to one of two priority queues when \texttt{simple\_switch} is launched with two priority queues. The egress pipeline can read queue metadata such as \texttt{deq\_qdepth}, \texttt{enq\_qdepth}, and \texttt{deq\_timedelta}. The P4 program can also read and write registers that are visible to the control plane through the BMv2 CLI. These mechanisms define the feasible design: class separation is performed in ingress, marking and telemetry export are performed in egress, and threshold adaptation is performed by a controller outside the dataplane.
+BMv2 provides the target features needed for the prototype. The ingress pipeline assigns packets to one of two priority queues through BMv2 priority metadata when \texttt{simple\_switch} is launched with two queues. The egress pipeline reads queue metadata, including \texttt{deq\_qdepth}, \texttt{enq\_qdepth}, and \texttt{deq\_timedelta}. The P4 program can also read and write registers that are visible to the control plane through the BMv2 CLI. These mechanisms define the feasible design: class separation is performed in ingress, marking and telemetry export are performed in egress, and threshold adaptation is performed by a controller outside the dataplane.
 
 The main design constraint is that this is not a programmable traffic-manager target. The implementation cannot replace BMv2's scheduler with a standards-faithful DualQ Coupled AQM scheduler. It can only approximate L4S-aware behavior using priority queues, CE marking, register-based telemetry, and controller updates. The report therefore evaluates the prototype as a BMv2 approximation and does not claim RFC-level conformance.
 
