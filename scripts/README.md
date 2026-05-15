@@ -223,6 +223,7 @@ sudo python3 scripts/generate_fixed_baseline_ci.py
 sudo python3 scripts/plot_ablation.py
 ```
 
+In the given setting it would take around 5.4 hours to generate the data and its corresponding statistics and plots. You can tune it by changing the DURATION_S paramter in the run_ablation.py script.
 
 
 ## Notes
