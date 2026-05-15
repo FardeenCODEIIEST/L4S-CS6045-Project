@@ -1,0 +1,6 @@
+1. sudo env PATH=$PATH PYTHONPATH=. python3 scripts/run_ablation.py run
+
+After 1.8 hours, we can do:-
+2. sudo python3 scripts/run_ablation.py analyze
+3. sudo python3 generate_fixed_baseline_ci.py
+3. sudo python3 scripts/plot_ablation.py

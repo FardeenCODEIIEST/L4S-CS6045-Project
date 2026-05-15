@@ -4,3 +4,5 @@ ptf
 pyyaml
 thrift
 mininet
+numpy
+matplotlib

@@ -41,7 +41,7 @@ controller:
   l4s_delay_high: 1000
   healthy_l4s_qdepth: 3
   healthy_classic_qdepth: 2
-  tighten_step: 8
+  tighten_step: 24
   relax_step: 1
   classic_max_threshold: 120
   classic_protection_max_threshold: 64
