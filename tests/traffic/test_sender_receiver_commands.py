@@ -59,6 +59,7 @@ def test_l4s_sender_builds_iperf3_client_command(monkeypatch):
 
     assert captured["cmd"] == [
         "iperf3",
+        "-4",
         "-c",
         "10.0.0.5",
         "-p",
@@ -69,6 +70,8 @@ def test_l4s_sender_builds_iperf3_client_command(monkeypatch):
         "30",
         "-P",
         "2",
+        "-C",
+        "dctcp",
         "-J",
         "--logfile",
         "l4s.json",
@@ -99,6 +102,7 @@ def test_classic_sender_builds_iperf3_client_command(monkeypatch):
 
     assert captured["cmd"] == [
         "iperf3",
+        "-4",
         "-c",
         "10.0.0.5",
         "-p",
@@ -109,6 +113,8 @@ def test_classic_sender_builds_iperf3_client_command(monkeypatch):
         "15",
         "-P",
         "1",
+        "-C",
+        "cubic",
         "-J",
         "--logfile",
         "classic.json",
