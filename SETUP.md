@@ -72,3 +72,6 @@ The repository ignores local build and experiment artifacts, including:
 - generated P4/BMv2 JSON outputs
 - packet captures and experiment results
 - editor and OS metadata
+
+## Experiment Run
+After the setup is done head to scripts/, and follow the instructions in its README to run the expriment trials
