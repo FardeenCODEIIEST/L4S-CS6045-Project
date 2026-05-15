@@ -22,6 +22,8 @@ except ModuleNotFoundError:
 
 REGISTER_NAMES = {
     "threshold": "reg_l4s_threshold",
+    "classic_threshold": "reg_classic_threshold",
+    "classic_protection_threshold": "reg_classic_protection_threshold",
     "l4s_qdepth": "reg_l4s_qdepth",
     "classic_qdepth": "reg_classic_qdepth",
     "l4s_delay": "reg_l4s_delay",
@@ -56,15 +58,45 @@ def run_controller(
         while iterations is None or completed < iterations:
             sampled_at = time.time()
             current_threshold, signals = read_signals(runtime)
+            current_classic_threshold = runtime.read_register(REGISTER_NAMES["classic_threshold"])
+            current_protection_threshold = runtime.read_register(REGISTER_NAMES["classic_protection_threshold"])
             decision = compute_threshold(current_threshold, signals, config)
             if not dry_run and decision.threshold != current_threshold:
                 runtime.write_register(REGISTER_NAMES["threshold"], decision.threshold)
+
+            classic_threshold = current_classic_threshold
+            protection_threshold = current_protection_threshold
+            protection_action = "hold"
+            if decision.reason == "classic_backlog":
+                classic_threshold = min(
+                    config.classic_max_threshold,
+                    current_classic_threshold + config.classic_adjust_step,
+                )
+                protection_threshold = min(
+                    config.classic_protection_max_threshold,
+                    current_protection_threshold + config.classic_adjust_step,
+                )
+                protection_action = "protect_classic"
+            elif decision.reason == "healthy_queues":
+                classic_threshold = max(config.min_threshold, current_classic_threshold - config.classic_relax_step)
+                protection_threshold = max(config.min_threshold, current_protection_threshold - config.classic_relax_step)
+                protection_action = "relax_classic_protection"
+
+            if not dry_run and classic_threshold != current_classic_threshold:
+                runtime.write_register(REGISTER_NAMES["classic_threshold"], classic_threshold)
+            if not dry_run and protection_threshold != current_protection_threshold:
+                runtime.write_register(REGISTER_NAMES["classic_protection_threshold"], protection_threshold)
 
             row = {
                 "timestamp": sampled_at,
                 "current_threshold": current_threshold,
                 "new_threshold": decision.threshold,
+                "current_classic_threshold": current_classic_threshold,
+                "new_classic_threshold": classic_threshold,
+                "current_protection_threshold": current_protection_threshold,
+                "new_protection_threshold": protection_threshold,
                 "action": decision.action,
+                "protection_action": protection_action,
                 "reason": decision.reason,
                 "signals": asdict(signals),
             }
@@ -101,6 +133,14 @@ def create_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--tighten-step", type=int, default=ThresholdPolicyConfig.tighten_step)
     parser.add_argument("--relax-step", type=int, default=ThresholdPolicyConfig.relax_step)
+    parser.add_argument("--classic-max-threshold", type=int, default=ThresholdPolicyConfig.classic_max_threshold)
+    parser.add_argument(
+        "--classic-protection-max-threshold",
+        type=int,
+        default=ThresholdPolicyConfig.classic_protection_max_threshold,
+    )
+    parser.add_argument("--classic-adjust-step", type=int, default=ThresholdPolicyConfig.classic_adjust_step)
+    parser.add_argument("--classic-relax-step", type=int, default=ThresholdPolicyConfig.classic_relax_step)
     return parser
 
 
@@ -117,6 +157,10 @@ def main(argv: list[str] | None = None) -> int:
         healthy_classic_qdepth=args.healthy_classic_qdepth,
         tighten_step=args.tighten_step,
         relax_step=args.relax_step,
+        classic_max_threshold=args.classic_max_threshold,
+        classic_protection_max_threshold=args.classic_protection_max_threshold,
+        classic_adjust_step=args.classic_adjust_step,
+        classic_relax_step=args.classic_relax_step,
     )
     runtime = RuntimeAPI(thrift_port=args.thrift_port, cli_path=args.cli_path)
     run_controller(
