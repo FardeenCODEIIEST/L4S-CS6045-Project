@@ -23,7 +23,6 @@ A P4-based prototype implementing Low-Latency, Low-Loss, and Scalable Throughput
 - [Dynamic Thresholding](#dynamic-thresholding)
 - [Queue Telemetry Signals](#queue-telemetry-signals)
 - [Evaluation Plan](#evaluation-plan)
-- [Known Limitations & Risks](#known-limitations--risks)
 - [References](#references)
 
 ---
@@ -396,12 +395,6 @@ For each combination, all three variants are run and the following metrics are c
 
 The central hypothesis to be validated:<br>
 The dynamic-threshold design preserves most of the L4S latency benefit while reducing Classic starvation compared to the fixed-threshold design.
-
----
-
-## Known Limitations & Risks
-
-**TBD**
 
 ---
 
