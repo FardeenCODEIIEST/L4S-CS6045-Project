@@ -1,5 +1,13 @@
 1. sudo env PATH=$PATH PYTHONPATH=. python3 scripts/run_ablation.py run
 
+Also need to run summarize_results for both the fixed and dynalic folders as :-
+
+a. python3 -m eval.summarize_results results/fixed_run_1
+
+b. for dir in results/dynamic_run_1_*/; do
+    python3 -m eval.summarize_results "$dir"
+done
+
 After 1.8 hours, we can do:-
 2. sudo python3 scripts/run_ablation.py analyze
 3. sudo python3 generate_fixed_baseline_ci.py
