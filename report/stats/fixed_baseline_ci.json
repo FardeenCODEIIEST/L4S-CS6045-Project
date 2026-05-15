@@ -1,0 +1,66 @@
+{
+  "label": "Fixed baseline",
+  "metrics": {
+    "classic_mbps": {
+      "ci_hi": 1.8478114407093074,
+      "ci_lo": 1.5711590704667544,
+      "mean": 1.7094852555880309,
+      "n": 3,
+      "sample_stddev": 0.055679289018644884,
+      "standard_error": 0.0321464525032016,
+      "t_critical": 4.303,
+      "values": [
+        1.73610054841303,
+        1.645493263796495,
+        1.7468619545545678
+      ]
+    },
+    "jain_fairness": {
+      "ci_hi": 0.7268508468858875,
+      "ci_lo": 0.6903296364333685,
+      "mean": 0.708590241659628,
+      "n": 3,
+      "sample_stddev": 0.007350289572121612,
+      "standard_error": 0.004243691663086112,
+      "t_critical": 4.303,
+      "values": [
+        0.7121509141863553,
+        0.7001377269542488,
+        0.7134820838382798
+      ]
+    },
+    "l4s_mbps": {
+      "ci_hi": 7.942970962539377,
+      "ci_lo": 7.700963427653095,
+      "mean": 7.821967195096236,
+      "n": 3,
+      "sample_stddev": 0.04870664027858905,
+      "standard_error": 0.02812079187616566,
+      "t_critical": 4.303,
+      "values": [
+        7.796751091468438,
+        7.87811198881398,
+        7.7910385050062905
+      ]
+    },
+    "l4s_share": {
+      "ci_hi": 0.8348413964380468,
+      "ci_lo": 0.8064601527035777,
+      "mean": 0.8206507745708123,
+      "n": 3,
+      "sample_stddev": 0.005712033015349339,
+      "standard_error": 0.0032978437990319708,
+      "t_critical": 4.303,
+      "values": [
+        0.8178823489552789,
+        0.8272195014230083,
+        0.8168504733341496
+      ]
+    }
+  },
+  "result_dirs": [
+    "/home/kunal/Documents/sdn_project/L4S-CS6045-Project/results/fixed_run_1",
+    "/home/kunal/Documents/sdn_project/L4S-CS6045-Project/results/fixed_run_2",
+    "/home/kunal/Documents/sdn_project/L4S-CS6045-Project/results/fixed_run_3"
+  ]
+}
