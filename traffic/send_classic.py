@@ -42,6 +42,13 @@ def require_tool(name):
         sys.exit(1)
 
 
+def require_tool(name):
+    if shutil.which(name) is None:
+        print(f"[ERROR] Missing required command: {name}")
+        print("        Install it on the Mininet host system, e.g. sudo apt install iperf3")
+        sys.exit(1)
+
+
 def run(cmd, check=True, capture=False):
     return subprocess.run(
         cmd, check=check,

@@ -1,0 +1,23 @@
+# config_parking_lot_asymmetric.yaml — Asymmetric parking lot configuration.
+
+
+# bn2 < bn1 so the final bottleneck (s2-s3) is tighter than the first (s1-s2).
+# Flows traversing all three hops (h1/h2) get CE-marked at both s1 and s2,
+# while the 1-hop flow (h4) only sees congestion at s3.
+# This stresses multi-hop CE accumulation, which is the key question for
+# this parking lot ablation.
+
+bn1_bw_mbps: 15     # s1 -> s2  (wider first hop)
+bn2_bw_mbps: 10     # s2 -> s3  (tighter final hop — primary bottleneck)
+
+sender_bw_mbps: 100
+link_delay_ms: 5
+queue_size_pkts: 100
+priority_queues: 2
+thrift_port_s1: 9090
+thrift_port_s2: 9091
+thrift_port_s3: 9092
+
+l4s_threshold: 30
+classic_threshold: 80
+classic_protection_threshold: 16
