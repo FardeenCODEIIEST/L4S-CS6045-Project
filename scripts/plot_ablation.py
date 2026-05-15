@@ -113,16 +113,17 @@ def plot_heatmap(
     data = np.array([[grid[ri][ti][0] for ti in range(len(tighten_vals))]
                       for ri in range(len(relax_vals))])
 
-    fig, ax = plt.subplots(figsize=(5, 4))
+    fig, ax = plt.subplots(figsize=(7.0, 5.6))
     im = ax.imshow(data, cmap=cmap, aspect="auto", origin="lower")
 
     ax.set_xticks(range(len(tighten_vals)))
     ax.set_xticklabels(tighten_vals)
     ax.set_yticks(range(len(relax_vals)))
     ax.set_yticklabels(relax_vals)
-    ax.set_xlabel("TightenStep")
-    ax.set_ylabel("RelaxStep")
-    ax.set_title(title)
+    ax.set_xlabel("TightenStep", fontsize=12)
+    ax.set_ylabel("RelaxStep", fontsize=12)
+    ax.set_title(title, fontsize=14)
+    ax.tick_params(axis="both", labelsize=10)
 
     vrange = data.max() - data.min() + 1e-9
     for ri in range(len(relax_vals)):
@@ -136,10 +137,11 @@ def plot_heatmap(
                     ti, ri,
                     f"{mu:.2f}\n±{margin:.2f}",
                     ha="center", va="center",
-                    fontsize=6, color=color,
+                    fontsize=9, color=color,
                 )
 
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.ax.tick_params(labelsize=10)
     fig.tight_layout()
 
     path = output_dir / f"heatmap_{metric}.pdf"
@@ -168,7 +170,7 @@ def plot_errorbars(
     base = baseline_metric(baseline or {}, metric)
 
     for ri, relax in enumerate(relax_vals):
-        fig, ax = plt.subplots(figsize=(5.5, 4.0))
+        fig, ax = plt.subplots(figsize=(7.0, 5.1))
         means   = [grid[ri][ti][0] for ti in range(len(tighten_vals))]
         lo_errs = [grid[ri][ti][0] - grid[ri][ti][1] for ti in range(len(tighten_vals))]
         hi_errs = [grid[ri][ti][2] - grid[ri][ti][0] for ti in range(len(tighten_vals))]
@@ -178,10 +180,11 @@ def plot_errorbars(
             fmt="o-", capsize=4, linewidth=1.2,
             color="tab:blue", label="Dynamic mean ± 95% CI",
         )
-        ax.set_title(f"RelaxStep = {relax}", fontsize=8)
-        ax.set_xlabel("TightenStep", fontsize=7)
-        ax.set_ylabel(MAP_CASE.get(metric, metric), fontsize=7)
+        ax.set_title(f"RelaxStep = {relax}", fontsize=12)
+        ax.set_xlabel("TightenStep", fontsize=11)
+        ax.set_ylabel(MAP_CASE.get(metric, metric), fontsize=11)
         ax.set_xticks(tighten_vals)
+        ax.tick_params(axis="both", labelsize=10)
         ax.grid(alpha=0.3)
         if base:
             mean = base["mean"]
@@ -191,12 +194,12 @@ def plot_errorbars(
             ax.axhline(ci_lo, color="black", linewidth=1.0, linestyle=":", label="Fixed 95% CI")
             ax.axhline(ci_hi, color="black", linewidth=1.0, linestyle=":")
 
-        fig.suptitle(f"{title}\n95% CI vs TightenStep")
+        fig.suptitle(f"{title}\n95% CI vs TightenStep", fontsize=13)
         handles, labels = ax.get_legend_handles_labels()
         fig.legend(
             handles,
             labels,
-            fontsize=6,
+            fontsize=9,
             loc="upper right",
             bbox_to_anchor=(0.98, 0.98),
             frameon=True,
