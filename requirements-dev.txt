@@ -1,0 +1,8 @@
+pytest
+scapy
+ptf
+pyyaml
+thrift
+mininet
+numpy
+matplotlib

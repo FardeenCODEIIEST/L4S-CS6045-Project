@@ -23,11 +23,20 @@ import os
 import signal
 import time
 import threading
+import shutil
+
+
+def require_tool(name):
+    if shutil.which(name) is None:
+        print(f"[ERROR] Missing required command: {name}")
+        print("        Install it on the Mininet host system, e.g. sudo apt install iperf3 tcpdump")
+        sys.exit(1)
 
 
 def run_iperf3_server(port, output_file, stop_event):
     cmd = [
         "iperf3", "-s",
+        "-4",
         "-p", str(port),
         "-J",
         "--logfile", output_file,
@@ -83,12 +92,19 @@ def main():
     if os.geteuid() != 0:
         print("[ERROR] Must run as root (required for tcpdump raw capture)")
         sys.exit(1)
+    require_tool("iperf3")
+    require_tool("tcpdump")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     l4s_json     = os.path.join(args.output_dir, "iperf3_l4s.json")
     classic_json = os.path.join(args.output_dir, "iperf3_classic.json")
     pcap_file    = os.path.join(args.output_dir, "capture.pcap")
+    for output_file in (l4s_json, classic_json, pcap_file):
+        try:
+            os.remove(output_file)
+        except FileNotFoundError:
+            pass
 
     stop_event = threading.Event()
 

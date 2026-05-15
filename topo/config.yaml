@@ -1,0 +1,10 @@
+bottleneck_bw_mbps: 10
+sender_bw_mbps: 100
+link_delay_ms: 5
+queue_size_pkts: 100
+priority_queues: 2
+thrift_port: 9090
+l4s_threshold: 30
+classic_threshold: 80
+classic_protection_threshold: 16
+
