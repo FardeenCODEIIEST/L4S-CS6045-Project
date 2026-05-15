@@ -1,71 +1,67 @@
-# `topo/` — Mininet/BMv2 Topologies
+# `topo/` — Mininet/BMv2 Topology
 
-This directory contains the runnable Mininet/BMv2 topology scaffold for the L4S prototype.
+This directory contains the runnable Mininet/BMv2 topology used by the L4S prototype experiments.
 
 ## Files
 
 | File | Description |
 |---|---|
-| `topology.py` | Single bottleneck — 4 senders, 1 receiver. Baseline. |
-| `dumbbell_topology.py` | Dumbbell — 4 senders on s1, 4 dedicated receivers on s2. |
-| `parking_lot_topology.py` | Parking lot — 3 switches in a linear chain; flows enter at 1, 2, or 3 hops from the receiver. |
-| `config.yaml` | Parameters for `topology.py` and `dumbbell_topology.py`. |
-| `config_parking_lot.yaml` | Parameters for `parking_lot_topology.py` (symmetric, bn1=bn2=10 Mbps). |
-| `config_parking_lot_asymmetric.yaml` | Parking lot with bn1=15, bn2=10 Mbps — tighter final hop. Used automatically by `run_project_suite.py`. |
-| `__init__.py` | Package init. |
+| `topology.py` | Main Mininet topology runner. Builds the single BMv2 bottleneck topology, configures hosts and switch runtime state, and can run fixed or dynamic traffic experiments. |
+| `config.yaml` | Default topology configuration for normal fixed-threshold or manual runs. |
+| `config_fairness_tuning.yaml` | Fairness-oriented profile with lower L4S threshold, higher Classic threshold/protection values, BMv2 queue shaping defaults, and dynamic-controller tuning knobs. |
+| `__init__.py` | Package marker for Python imports. |
 
-## Topologies
+## Topology
 
-### Single Bottleneck (`topology.py`)
+`topology.py` builds a single-switch bottleneck:
 
 ```text
 h1 L4S sender      \
 h2 L4S sender       \
-h3 Classic sender    s1 BMv2 --[10 Mbps]--> h5 receiver
+h3 Classic sender    s1 BMv2 -- bottleneck --> h5 receiver
 h4 Classic sender   /
 ```
 
-All four senders compete at one bottleneck link. Baseline topology for
-validating L4S/Classic queue separation, CE marking, and anti-starvation.
+In the current fixed and dynamic experiment helpers, traffic is generated from:
 
-### Dumbbell (`dumbbell_topology.py`)
+- `h1` to `h5` for L4S traffic on TCP port `5201`
+- `h3` to `h5` for Classic traffic on TCP port `5202`
 
-```text
-h1 (L4S)    ──┐                        ┌── h5 (recv for h1)
-h2 (L4S)    ──┤                        ├── h6 (recv for h2)
-               s1 ──[bottleneck]── s2
-h3 (Classic)──┤                        ├── h7 (recv for h3)
-h4 (Classic)──┘                        └── h8 (recv for h4)
-```
-
-Each sender has a dedicated receiver. Four concurrent flows compete at the
-inter-switch bottleneck. Tests per-flow fairness between L4S and Classic.
-
-### Parking Lot (`parking_lot_topology.py`)
-
-```text
-h1 (L4S, 3-hop)   ──┐
-                     s1 ──[bn1]── s2 ──[bn2]── s3 ──── h5 (receiver)
-h2 (Classic, 3-hop)──┘    ↑               ↑
-                      h3 (L4S,       h4 (Classic,
-                        2-hop)          1-hop)
-```
+`h2` and `h4` are available in the topology but are not used by the default fixed/dynamic experiment runner.
 
 ## Runtime Model
 
-BMv2 acts as a small IPv4 router. Each host is on a separate `/24` link with a
-static ARP entry for its gateway IP. The topology script installs forwarding
-rules, queue rate/depth caps, and threshold register values via
-`simple_switch_CLI` at startup. Checksum offloads are disabled on all
-interfaces.
+BMv2 runs the compiled P4 program from:
 
-## Configuration
+```text
+p4src/l4s.p4
+```
 
-All runtime parameters come from the config yaml — no recompilation needed.
-Edit the relevant file and re-run.
+The topology script compiles it to:
+
+```text
+build/l4s.json
+```
+
+if the JSON is missing or older than the P4 source.
+
+Each host is placed on a separate `/24` link. Static routes and ARP entries are installed because the P4 program forwards IPv4 packets but does not implement ARP responder behavior for the router-facing gateway addresses.
+
+At startup, `topology.py` configures:
+
+- host IP, route, ARP, TCP ECN, and congestion-control settings
+- BMv2 forwarding table entries
+- L4S, Classic, and Classic-protection threshold registers
+- optional BMv2 receiver egress queue rate/depth settings
+- checksum offload disabling on Mininet interfaces
+
+## Configuration Files
+
+### `config.yaml`
+
+Default profile:
 
 ```yaml
-# config.yaml (single bottleneck / dumbbell)
 bottleneck_bw_mbps: 10
 sender_bw_mbps: 100
 link_delay_ms: 5
@@ -77,57 +73,188 @@ classic_threshold: 80
 classic_protection_threshold: 16
 ```
 
+`topology.py` also has built-in defaults for optional BMv2 queue shaping:
+
 ```yaml
-# config_parking_lot.yaml
-bn1_bw_mbps: 10   # s1 -> s2
-bn2_bw_mbps: 10   # s2 -> s3
-# ... same other fields
+bmv2_queue_rate_pps: 800
+bmv2_queue_depth_pkts: 100
+```
+
+These can be added to the YAML or overridden with CLI flags.
+
+### `config_fairness_tuning.yaml`
+
+Fairness-oriented dynamic profile. It keeps the same basic topology parameters but changes threshold behavior:
+
+```yaml
+l4s_threshold: 8
+classic_threshold: 100
+classic_protection_threshold: 32
+bmv2_queue_rate_pps: 800
+bmv2_queue_depth_pkts: 100
+```
+
+It also includes a `controller:` section. `topology.py --run-dynamic` translates these values into `controller/controller.py` CLI arguments:
+
+```yaml
+controller:
+  interval_s: 0.5
+  min_threshold: 3
+  max_threshold: 40
+  growth_high: 8
+  classic_backlog_threshold: 10
+  l4s_delay_high: 1000
+  healthy_l4s_qdepth: 3
+  healthy_classic_qdepth: 2
+  tighten_step: 24
+  relax_step: 1
+  classic_max_threshold: 120
+  classic_protection_max_threshold: 64
+  classic_adjust_step: 4
+  classic_relax_step: 1
 ```
 
 ## Manual Usage
 
-For running full experiment suites, see `scripts/README.md`. For quick manual
-runs and debugging:
+Run commands from the project root:
 
 ```bash
 export RUN="sudo env PATH=$PATH PYTHONPATH=."
+```
 
-# Drop into Mininet CLI
+Start the topology and drop into the Mininet CLI:
+
+```bash
 $RUN python3 topo/topology.py
+```
 
-# Smoke test
+Run a connectivity smoke test from `h1` and `h3` to `h5`:
+
+```bash
 $RUN python3 topo/topology.py --smoke-test
+```
 
-# Non-interactive fixed-threshold experiment
+Start and configure the topology, then exit without opening the CLI:
+
+```bash
+$RUN python3 topo/topology.py --no-cli
+```
+
+Print the BMv2 runtime commands that would be installed:
+
+```bash
+python3 topo/topology.py --dry-run
+```
+
+## Fixed Experiment
+
+Run one fixed-threshold experiment:
+
+```bash
 $RUN python3 topo/topology.py \
-    --run-fixed --experiment-duration 30 --output-dir results/fixed
+  --run-fixed \
+  --experiment-duration 180 \
+  --l4s-bw 10.0 \
+  --classic-bw 10.0 \
+  --output-dir results/fixed_run_1
+```
 
-# Same for dumbbell and parking lot
-$RUN python3 topo/dumbbell_topology.py --run-fixed ...
-$RUN python3 topo/parking_lot_topology.py --run-fixed ...
+The fixed experiment writes:
 
-# Parking lot asymmetric
-$RUN python3 topo/parking_lot_topology.py \
-    --config topo/config_parking_lot_asymmetric.yaml --run-fixed ...
+```text
+<output-dir>/iperf3_l4s.json
+<output-dir>/iperf3_classic.json
+<output-dir>/l4s_client.json
+<output-dir>/classic_client.json
+<output-dir>/capture.pcap
+```
+
+Summarize the result with:
+
+```bash
+python3 -m eval.summarize_results results/fixed_run_1
+```
+
+## Dynamic Experiment
+
+Run one dynamic-threshold experiment:
+
+```bash
+$RUN python3 topo/topology.py \
+  --run-dynamic \
+  --config topo/config_fairness_tuning.yaml \
+  --experiment-duration 180 \
+  --l4s-bw 10.0 \
+  --classic-bw 10.0 \
+  --output-dir results/dynamic_run_example
+```
+
+`--run-dynamic` starts `controller/controller.py` alongside the traffic experiment. The dynamic controller writes:
+
+```text
+<output-dir>/controller_trace.jsonl
+```
+
+The traffic outputs are the same as the fixed experiment outputs.
+
+Summarize the result with:
+
+```bash
+python3 -m eval.summarize_results results/dynamic_run_example
+```
+
+## Useful CLI Overrides
+
+Most YAML values can be overridden from the command line:
+
+```bash
+$RUN python3 topo/topology.py \
+  --config topo/config.yaml \
+  --bottleneck-bw 10 \
+  --sender-bw 100 \
+  --delay-ms 5 \
+  --queue-size 100 \
+  --l4s-threshold 30 \
+  --classic-threshold 80 \
+  --classic-protection-threshold 16
+```
+
+BMv2 queue shaping overrides:
+
+```bash
+$RUN python3 topo/topology.py \
+  --bmv2-queue-rate-pps 800 \
+  --bmv2-queue-depth 100
+```
+
+Dynamic controller interval override:
+
+```bash
+$RUN python3 topo/topology.py \
+  --run-dynamic \
+  --controller-interval 0.5
 ```
 
 ## Connectivity Checks
+
+Inside the Mininet CLI:
+
+```bash
+mininet> h1 ping -c 3 10.0.5.5
+mininet> h3 ping -c 3 10.0.5.5
+```
+
+Or use host names:
 
 ```bash
 mininet> h1 ping -c 3 h5
 mininet> h3 ping -c 3 h5
 ```
 
----
+## Notes
 
-## Dynamic Threshold Experiment
-
-`--run-dynamic` starts `controller/controller.py` alongside traffic and writes
-a JSON-lines threshold trace to:
-
-```text
-<output-dir>/controller_trace.jsonl
-```
-
-The controller uses `simple_switch_CLI` for register reads/writes — adequate
-for one-second threshold updates in the prototype.
+- `topology.py` must be run as root for Mininet.
+- `topology.py` requires `simple_switch`, `simple_switch_CLI`, `p4c-bm2-ss`, Mininet, `iperf3`, and `tcpdump`.
+- The script attempts to load and allow Linux `dctcp` support before creating the topology.
+- Result files created under `sudo` are chowned back to the invoking user when `SUDO_UID` and `SUDO_GID` are available.
+- For the full fixed-baseline plus dynamic-ablation workflow, see `scripts/README.md`.
