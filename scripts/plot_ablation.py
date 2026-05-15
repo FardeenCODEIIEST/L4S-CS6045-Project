@@ -40,9 +40,9 @@ HEATMAP_SPECS = [
 ]
 
 MAP_CASE = {
-    "l4s_mbps":      "L4sMbps",
-    "classic_mbps":  "ClassicMbps",
-    "jain_fairness": "JainFairness"
+    "l4s_mbps":      "L4S Throughput (Mbps)",
+    "classic_mbps":  "Classic Throughput (Mbps)",
+    "jain_fairness": "Jain Fairness Index"
 }
 
 # ---------------------------------------------------------------------------
