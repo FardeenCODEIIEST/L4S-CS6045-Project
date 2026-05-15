@@ -29,6 +29,10 @@ class ThresholdPolicyConfig:
     healthy_classic_qdepth: int = 5
     tighten_step: int = 5
     relax_step: int = 2
+    classic_max_threshold: int = 100
+    classic_protection_max_threshold: int = 32
+    classic_adjust_step: int = 2
+    classic_relax_step: int = 4
 
 
 @dataclass(frozen=True)
@@ -76,6 +80,7 @@ def compute_threshold(
         signals.l4s_qdepth <= config.healthy_l4s_qdepth
         and signals.classic_qdepth <= config.healthy_classic_qdepth
         and signals.l4s_growth == 0
+        and signals.classic_growth == 0
     ):
         return ThresholdDecision(
             threshold=clamp(current + config.relax_step, config.min_threshold, config.max_threshold),
