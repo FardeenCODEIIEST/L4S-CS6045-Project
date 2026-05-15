@@ -1,0 +1,133 @@
+\begin{figure}[t]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+    font=\footnotesize,
+    >=Latex,
+    data/.style={->, thick, rounded corners=2pt},
+    ctrl/.style={->, thick, dashed, draw=blue!60!black, rounded corners=2pt},
+    box/.style={
+        draw=black,
+        rounded corners=2pt,
+        align=center,
+        minimum width=2.15cm,
+        minimum height=0.82cm,
+        fill=white
+    },
+    smallbox/.style={
+        draw=black,
+        rounded corners=2pt,
+        align=center,
+        minimum width=1.55cm,
+        minimum height=0.72cm,
+        fill=white
+    },
+    queue/.style={
+        draw=black,
+        rounded corners=2pt,
+        align=center,
+        minimum width=1.95cm,
+        minimum height=0.78cm,
+        fill=white
+    },
+    regbox/.style={
+        draw=blue!60!black,
+        rounded corners=2pt,
+        align=center,
+        minimum width=1.95cm,
+        minimum height=0.72cm,
+        fill=blue!5
+    },
+    group/.style={
+        draw=black!55,
+        dashed,
+        rounded corners=3pt,
+        fill=gray!4
+    },
+    grouptitle/.style={font=\small\bfseries, fill=white, inner sep=1.5pt}
+]
+
+% Stable crop.
+\path[use as bounding box] (-2.65,-3.35) rectangle (5.55,4.38);
+
+% --------------------------------------------------
+% Traffic sources
+% --------------------------------------------------
+\node[smallbox] (l4s_src) at (-1.10,3.55) {L4S\\h1,h2};
+\node[smallbox] (cl_src)  at ( 1.10,3.55) {Classic\\h3,h4};
+
+% --------------------------------------------------
+% BMv2 data path
+% --------------------------------------------------
+\node[box] (ingress) at (0.0,1.45) {Ingress\\ECN classify};
+
+\node[queue] (q1) at (-1.10,0.30) {Q1: L4S\\high priority};
+\node[queue] (q0) at ( 1.10,0.30) {Q0: Classic\\protected};
+
+\node[box] (egress) at (0.0,-0.90) {Egress\\CE marking};
+\node[smallbox] (rx) at (0.0,-2.25) {h5\\Receiver};
+
+\node[regbox] (regs) at (3.80,0.95) {Telemetry\\registers};
+\node[box, minimum width=2.05cm, minimum height=0.78cm] (ctrl) at (3.80,-2.35) {Python\\controller};
+
+% Helper coordinates for separate control-arrow entry/exit points.
+\coordinate (egtele) at ([yshift=0.18cm]egress.east);
+\coordinate (egupdate) at ([yshift=-0.18cm]egress.east);
+% Telemetry path is routed through the open gap to the right of Q0,
+% avoiding overlap with the Q0 node before entering the register block.
+\coordinate (telebus) at (2.35,-0.72);
+\coordinate (regwrite) at ([yshift=-0.18cm]regs.west);
+\coordinate (updatebus) at ($(ctrl.west)+(-0.62cm,0)$);
+
+% --------------------------------------------------
+% Background groups, fitted after nodes so the switch box clears egress.
+% --------------------------------------------------
+\begin{pgfonlayer}{background}
+\node[group, fit=(l4s_src)(cl_src), inner xsep=0.48cm, inner ysep=0.20cm] (srcgroup) {};
+\node[group, fit=(ingress)(q1)(q0)(egress)(regs), inner xsep=0.40cm, inner ysep=0.26cm] (swgroup) {};
+\node[group, fit=(ctrl), inner xsep=0.30cm, inner ysep=0.15cm] (ctrlgroup) {};
+\end{pgfonlayer}
+
+\node[grouptitle] at ($(srcgroup.north)+(0,0.17)$) {Traffic Sources};
+\node[grouptitle, anchor=east] at ($(swgroup.north east)+(-0.15,0.17)$) {BMv2 Switch};
+\node[grouptitle] at ($(ctrlgroup.south)+(0,-0.16)$) {Control Plane};
+
+% --------------------------------------------------
+% Data-plane arrows: kept separate to avoid ambiguous split/merge arrows.
+% --------------------------------------------------
+\draw[data] (l4s_src.south) to[out=-90,in=115] (ingress.north west);
+\draw[data] (cl_src.south)  to[out=-90,in=65]  (ingress.north east);
+
+\draw[data] ([xshift=-0.38cm]ingress.south) -- (q1.north);
+\draw[data] ([xshift= 0.38cm]ingress.south) -- (q0.north);
+
+\draw[data] (q1.south) -- ([xshift=-0.42cm]egress.north);
+\draw[data] (q0.south) -- ([xshift= 0.42cm]egress.north);
+
+\draw[data] (egress.south) -- (rx.north);
+
+% --------------------------------------------------
+% Telemetry and control arrows.
+% Egress writes telemetry into the register block from outside.
+% The controller update arrow enters the egress block separately.
+% --------------------------------------------------
+\draw[ctrl] (egtele) --
+    node[pos=0.58, above=3pt, fill=white, inner sep=1pt,
+    text=blue!60!black] {\scriptsize telemetry}
+    (telebus) -- (telebus |- regwrite) -- (regwrite);
+
+\draw[ctrl] (regs.south) --
+    node[pos=0.52, right, fill=white, inner sep=1pt,
+    text=blue!60!black] {\scriptsize poll}
+    (ctrl.north);
+
+\draw[ctrl] (ctrl.west) -- (updatebus) |-
+    node[pos=0.38, right, fill=white, inner sep=1pt,
+    text=blue!60!black] {\scriptsize update}
+    (egupdate);
+
+\end{tikzpicture}%
+}
+\caption{System architecture of the L4S-aware BMv2 prototype. L4S and Classic traffic sources are classified using ECN at ingress, mapped to separate priority queues, and marked at egress. Queue telemetry is exported to registers, while the Python controller polls the telemetry and updates the egress marking policy.}
+\label{fig:system-architecture}
+\end{figure}
