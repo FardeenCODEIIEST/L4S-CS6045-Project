@@ -23,6 +23,7 @@ import subprocess
 import sys
 import os
 import signal
+import shutil
 
 
 IPTABLES_ADD = [
@@ -36,11 +37,18 @@ IPTABLES_DEL = [
     "-j", "TOS", "--set-tos", "0x01/0x03"
 ]
 
-SYSCTL_DCTCP = {
-    "net.ipv4.tcp_congestion_control": "dctcp",
+SYSCTL_L4S_ECN = {
     "net.ipv4.tcp_ecn":                "1",   # Enable ECN negotiation
     "net.ipv4.tcp_ecn_fallback":       "0",   # Do not fall back if peer lacks ECN
 }
+L4S_CONGESTION_CONTROL = "dctcp"
+
+
+def require_tool(name):
+    if shutil.which(name) is None:
+        print(f"[ERROR] Missing required command: {name}")
+        print("        Install it on the Mininet host system, e.g. sudo apt install iperf3 iptables")
+        sys.exit(1)
 
 
 def run(cmd, check=True, capture=False):
@@ -52,6 +60,28 @@ def run(cmd, check=True, capture=False):
     )
 
 
+def is_dctcp_allowed() -> bool:
+    result = run(["sysctl", "-n", "net.ipv4.tcp_allowed_congestion_control"], capture=True)
+    return "dctcp" in result.stdout.strip().split()
+
+
+def ensure_dctcp_allowed() -> None:
+    if is_dctcp_allowed():
+        return
+    try:
+        run([
+            "sysctl",
+            "-w",
+            'net.ipv4.tcp_allowed_congestion_control=reno cubic dctcp',
+        ])
+        if is_dctcp_allowed():
+            print("[sysctl] Enabled dctcp in tcp_allowed_congestion_control")
+            return
+    except subprocess.CalledProcessError as e:
+        print(f"[WARN] Could not update tcp_allowed_congestion_control: {e}")
+    print("[WARN] dctcp is not listed in tcp_allowed_congestion_control; iperf3 -C dctcp may fail")
+
+
 def apply_sysctl(settings, restore=False, saved=None):
     """Apply sysctl settings; if restore=True, reinstate saved originals."""
     if restore and saved:
@@ -61,6 +91,7 @@ def apply_sysctl(settings, restore=False, saved=None):
         return
 
     original = {}
+    failed = False
     for key, val in settings.items():
         try:
             result = run(["sysctl", "-n", key], capture=True)
@@ -68,7 +99,10 @@ def apply_sysctl(settings, restore=False, saved=None):
             run(["sysctl", "-w", f"{key}={val}"])
             print(f"[sysctl] {key} = {val}  (was: {original[key]})")
         except subprocess.CalledProcessError as e:
-            print(f"[WARN] sysctl {key} failed: {e}")
+            print(f"[ERROR] sysctl {key} failed: {e}")
+            failed = True
+    if failed:
+        raise RuntimeError("Failed to apply required sysctl settings")
     return original
 
 
@@ -91,13 +125,19 @@ def remove_iptables_rule():
 
 
 def run_iperf3(dst, port, bandwidth_mbps, duration_s, parallel, output_file):
+    try:
+        os.remove(output_file)
+    except FileNotFoundError:
+        pass
     cmd = [
         "iperf3",
+        "-4",
         "-c", dst,
         "-p", str(port),
         "-b", f"{bandwidth_mbps}M",
         "-t", str(int(duration_s)),
         "-P", str(parallel),
+        "-C", L4S_CONGESTION_CONTROL,
         "-J",                      
         "--logfile", output_file,
     ]
@@ -122,20 +162,33 @@ def main():
     if os.geteuid() != 0:
         print("[ERROR] Must run as root (required for sysctl and iptables)")
         sys.exit(1)
+    require_tool("sysctl")
+    require_tool("iperf3")
+    require_tool("iptables")
 
-    saved_sysctl = apply_sysctl(SYSCTL_DCTCP)
+    try:
+        ensure_dctcp_allowed()
+        saved_sysctl = apply_sysctl(SYSCTL_L4S_ECN)
+    except RuntimeError as e:
+        print(f"[ERROR] {e}")
+        sys.exit(1)
     add_iptables_rule()
 
     proc = run_iperf3(args.dst, args.port, args.bandwidth,
                       args.duration, args.parallel, args.output)
 
+    cleaned_up = False
+
     def cleanup(signum=None, frame=None):
+        nonlocal cleaned_up
+        if cleaned_up:
+            return
+        cleaned_up = True
         if proc.poll() is None:
             proc.terminate()
         if not args.no_cleanup:
             remove_iptables_rule()
-            apply_sysctl(SYSCTL_DCTCP, restore=True, saved=saved_sysctl)
-        sys.exit(0)
+            apply_sysctl(SYSCTL_L4S_ECN, restore=True, saved=saved_sysctl)
 
     signal.signal(signal.SIGINT,  cleanup)
     signal.signal(signal.SIGTERM, cleanup)
